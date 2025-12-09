@@ -61,7 +61,7 @@ google-people1 = { version = "5.0.5", optional = true }
 # HTTP client for Google hubs
 hyper = { version = "0.14.32", features = ["full"], optional = true }
 hyper-rustls = { version = "0.24.2", optional = true }
-dirs = { version = "5.0.1" }
+dirs = { version = "6.0.0" }
 
 # Local dependencies
 scrapable_derive = { path = "../scrapable_derive" }
