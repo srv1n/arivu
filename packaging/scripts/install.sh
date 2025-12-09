@@ -13,7 +13,9 @@ NC='\033[0m'
 # Configuration
 REPO="srv1n/arivu"
 BINARY_NAME="arivu"
-INSTALL_DIR="/usr/local/bin"
+# Default to ~/.local/bin (no sudo required), fallback to /usr/local/bin
+DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 TEMP_DIR="/tmp/arivu-install"
 
 print_header() {
@@ -138,6 +140,11 @@ download_and_install() {
         exit 1
     fi
 
+    # Create install directory if it doesn't exist
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        mkdir -p "$INSTALL_DIR"
+    fi
+
     # Check if we need sudo
     if [[ -w "$INSTALL_DIR" ]]; then
         cp "$binary_name" "$INSTALL_DIR/"
@@ -241,11 +248,11 @@ case "${1:-}" in
         echo "  --version, -v  Show version information"
         echo ""
         echo "Environment variables:"
-        echo "  INSTALL_DIR    Installation directory (default: /usr/local/bin)"
+        echo "  INSTALL_DIR    Installation directory (default: ~/.local/bin)"
         echo ""
         echo "Examples:"
-        echo "  $0                           # Install to /usr/local/bin"
-        echo "  INSTALL_DIR=~/.local/bin $0  # Install to user directory"
+        echo "  $0                                # Install to ~/.local/bin"
+        echo "  INSTALL_DIR=/usr/local/bin $0    # Install system-wide (requires sudo)"
         exit 0
         ;;
     --version|-v)
