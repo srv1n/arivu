@@ -4,7 +4,9 @@ use chrono::{Datelike, Duration, Utc};
 use publicsuffix::{List, Psl};
 use rmcp::model::CallToolResult;
 #[cfg(feature = "browser-cookies")]
-use rookie::{brave, chrome, common::enums::CookieToString, firefox, safari};
+use rookie::{brave, chrome, common::enums::CookieToString, firefox};
+#[cfg(all(feature = "browser-cookies", target_os = "macos"))]
+use rookie::safari;
 use serde::Serialize;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use thiserror::Error;
@@ -71,7 +73,14 @@ pub async fn get_cookies(browser: Browser, domain: String) -> Result<String, Scr
     let cookies = match browser {
         Browser::Firefox => firefox(Some(vec![domain_str.to_string()])),
         Browser::Chrome => chrome(Some(vec![domain_str.to_string()])),
+        #[cfg(target_os = "macos")]
         Browser::Safari => safari(Some(vec![domain_str.to_string()])),
+        #[cfg(not(target_os = "macos"))]
+        Browser::Safari => {
+            return Err(ScraperError::CookieError(
+                "Safari cookies are only available on macOS".to_string(),
+            ))
+        }
         Browser::Brave => brave(Some(vec![domain_str.to_string()])),
     }
     .map_err(|e| ScraperError::CookieError(e.to_string()))?;
