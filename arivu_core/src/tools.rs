@@ -12,7 +12,7 @@ use std::borrow::Cow;
 use tokio::sync::Mutex;
 
 /// A simple facade that exposes a unified tool surface across all enabled connectors.
-/// - Tool names are namespaced as "<provider>.<action>" (e.g., "wikipedia.search").
+/// - Tool names are namespaced as `provider.action` (e.g., `wikipedia.search`).
 /// - Only connectors compiled in via Cargo features are included.
 pub struct Tools {
     connectors: HashMap<String, Arc<Mutex<Box<dyn Connector>>>>,
