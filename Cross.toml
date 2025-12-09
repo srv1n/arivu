@@ -1,44 +1,21 @@
-# Cross-compilation configuration for RZN DataSourcer
+# Cross-compilation configuration for Arivu
+# Uses standard cross-rs images (no custom Dockerfile)
 
 [build]
-# Default image tag
 default-target = "x86_64-unknown-linux-gnu"
 
-[target.x86_64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/cross:x86_64-unknown-linux-gnu"
-
-[target.x86_64-unknown-linux-musl]
-image = "ghcr.io/cross-rs/cross:x86_64-unknown-linux-musl"
-
-[target.aarch64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/cross:aarch64-unknown-linux-gnu"
-
-[target.aarch64-unknown-linux-musl]
-image = "ghcr.io/cross-rs/cross:aarch64-unknown-linux-musl"
-
-[target.x86_64-pc-windows-gnu]
-image = "ghcr.io/cross-rs/cross:x86_64-pc-windows-gnu"
-
-[target.aarch64-pc-windows-msvc]
-image = "ghcr.io/cross-rs/cross:aarch64-pc-windows-msvc"
-
-# ARM targets
-[target.armv7-unknown-linux-gnueabihf]
-image = "ghcr.io/cross-rs/cross:armv7-unknown-linux-gnueabihf"
-
-[target.aarch64-apple-darwin]
-# Note: cross doesn't support macOS targets directly
-# Use zig or osxcross for macOS cross-compilation
-
-# Environment variables for all targets
 [build.env]
 passthrough = [
     "RUST_LOG",
     "CARGO_BUILD_TARGET_DIR",
 ]
 
-# Custom build configuration
-[build.dockerfile]
-# Use multi-stage builds for smaller images
-context = "."
-file = "packaging/docker/Dockerfile.cross"
+[target.x86_64-unknown-linux-gnu]
+
+[target.x86_64-unknown-linux-musl]
+
+[target.aarch64-unknown-linux-gnu]
+
+[target.aarch64-unknown-linux-musl]
+
+[target.armv7-unknown-linux-gnueabihf]

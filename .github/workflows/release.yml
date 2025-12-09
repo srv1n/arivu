@@ -13,97 +13,52 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
 
 jobs:
-  create-release:
-    name: Create Release
+  build-linux:
+    name: Build Linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
     steps:
-      - name: Create Release
-        id: create_release
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release -p arivu_cli
+
+      - name: Create Archive
+        run: |
+          mkdir -p dist
+          cp target/release/arivu dist/
+          cd dist && tar -czf arivu-${{ github.ref_name || github.event.inputs.tag }}-x86_64-unknown-linux-gnu.tar.gz arivu
+
+      - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.tag }}
-          name: Arivu ${{ github.ref_name || github.event.inputs.tag }}
-          body: |
-            ## What's Changed
-            
-            See [CHANGELOG.md](https://github.com/srv1n/arivu/blob/main/CHANGELOG.md) for details.
-            
-            ## Installation
-            
-            ### Quick Install (Recommended)
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
-            ```
+          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-x86_64-unknown-linux-gnu.tar.gz
 
-            ### Homebrew (macOS/Linux)
-            ```bash
-            brew install srv1n/tap/arivu
-            ```
-            
-            ### Manual Download
-            Download the appropriate binary for your platform below and add it to your PATH.
-            
-            ## Quick Start
-            ```bash
-            arivu setup                             # Interactive setup wizard
-            arivu list                              # List available connectors
-            arivu search youtube "rust programming" # Search YouTube videos
-            arivu get youtube dQw4w9WgXcQ           # Get video with transcript
-            arivu tools slack                       # Show connector tools
-            arivu config set github --value "token" # Configure credentials
-            ```
-
-            ## Documentation
-            - [Installation Guide](https://github.com/srv1n/arivu/blob/main/INSTALLATION.md)
-            - [README](https://github.com/srv1n/arivu/blob/main/README.md)
-          draft: false
-          prerelease: false
-
-  build-unix:
-    name: Build Unix Targets
-    needs: create-release
-    runs-on: ubuntu-latest
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
     permissions:
       contents: write
     strategy:
       matrix:
         target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-gnu
-          - aarch64-unknown-linux-musl
-          - armv7-unknown-linux-gnueabihf
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Build Binary
-        run: cross build --release --target ${{ matrix.target }} --package arivu_cli
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p arivu_cli
 
       - name: Create Archive
         run: |
@@ -119,149 +74,63 @@ jobs:
 
   build-windows:
     name: Build Windows
-    needs: create-release
     runs-on: windows-latest
     permissions:
       contents: write
-    strategy:
-      matrix:
-        target:
-          - x86_64-pc-windows-msvc
-          - aarch64-pc-windows-msvc
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build Binary
-        run: cargo build --release --target ${{ matrix.target }} --package arivu_cli
+      - name: Build
+        run: cargo build --release -p arivu_cli
 
       - name: Create Archive
         run: |
           mkdir dist
-          cp target/${{ matrix.target }}/release/arivu.exe dist/
+          cp target/release/arivu.exe dist/
           cd dist
-          Compress-Archive -Path arivu.exe -DestinationPath arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
+          Compress-Archive -Path arivu.exe -DestinationPath arivu-${{ github.ref_name || github.event.inputs.tag }}-x86_64-pc-windows-msvc.zip
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.tag }}
-          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
+          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-x86_64-pc-windows-msvc.zip
 
-  build-macos:
-    name: Build macOS
-    needs: create-release
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    strategy:
-      matrix:
-        target:
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build Binary
-        run: cargo build --release --target ${{ matrix.target }} --package arivu_cli
-
-      - name: Create Archive
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/arivu dist/
-          cd dist && tar -czf arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz arivu
-
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
-          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
-
-  generate-checksums:
-    name: Generate Checksums
-    needs: [create-release, build-unix, build-windows, build-macos]
+  create-release:
+    name: Create Release
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download Release Assets
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const tag = context.ref ? context.ref.replace('refs/tags/', '') : context.payload.inputs.tag;
-            const { data: release } = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: tag
-            });
-
-            const assets = release.assets;
-            for (const asset of assets) {
-              const response = await github.rest.repos.getReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id,
-                headers: { accept: 'application/octet-stream' }
-              });
-              fs.writeFileSync(asset.name, Buffer.from(response.data));
-            }
-
-      - name: Generate Checksums
-        run: |
-          sha256sum *.tar.gz *.zip > checksums.txt || true
-          cat checksums.txt
-
-      - name: Upload Checksums
+      - uses: actions/checkout@v4
+      - name: Update Release Notes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.tag }}
-          files: checksums.txt
+          name: Arivu ${{ github.ref_name || github.event.inputs.tag }}
+          body: |
+            ## Arivu ${{ github.ref_name || github.event.inputs.tag }}
 
-  update-homebrew:
-    name: Update Homebrew Formula
-    needs: [build-macos, generate-checksums]
-    runs-on: macos-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Update Homebrew Formula
-        env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
-        run: |
-          # This would be implemented to automatically update the Homebrew formula
-          # For now, manual update is required
-          echo "Manual Homebrew formula update required"
-          echo "Update the SHA256 checksums in packaging/homebrew/rzn-datasourcer.rb"
+            ### Installation
+
+            **Quick Install (macOS/Linux)**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
+            ```
+
+            **Manual Download**
+            Download the appropriate binary for your platform below and add it to your PATH.
+
+            ### Quick Start
+            ```bash
+            arivu list                              # List available connectors
+            arivu search youtube "rust programming" # Search YouTube
+            arivu get youtube dQw4w9WgXcQ           # Get video with transcript
+            ```
+
+            See [README](https://github.com/srv1n/arivu/blob/main/README.md) for full documentation.
+          draft: false
+          prerelease: false

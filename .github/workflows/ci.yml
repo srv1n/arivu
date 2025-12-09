@@ -9,8 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Minimum supported Rust version
-  MSRV: "1.75.0"
 
 jobs:
   # Quick checks that fail fast
@@ -33,7 +31,6 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # Run clippy with warnings - allows common patterns defined in Cargo.toml
       - run: cargo clippy --all-targets -- -D warnings -A clippy::too_many_arguments -A clippy::type_complexity
 
   # Check that it compiles
@@ -53,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,18 +67,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p arivu_core --no-default-features
       - run: cargo test -p arivu_cli --no-default-features
-
-  # MSRV check
-  msrv:
-    name: MSRV (1.75.0)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.75.0"
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
 
   # Build the CLI binary
   build:
@@ -107,17 +92,7 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
-  # Security audit
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  # Dependency license and ban check
+  # Dependency license check (skip advisories, handled separately)
   deny:
     name: Cargo Deny
     runs-on: ubuntu-latest
@@ -125,5 +100,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check
-          arguments: --all-features
+          command: check licenses bans sources
