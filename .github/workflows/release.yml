@@ -19,33 +19,33 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       release_id: ${{ steps.create_release.outputs.id }}
     steps:
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.tag }}
-          release_name: RZN DataSourcer ${{ github.ref_name || github.event.inputs.tag }}
+          name: Arivu ${{ github.ref_name || github.event.inputs.tag }}
           body: |
             ## What's Changed
             
-            See [CHANGELOG.md](https://github.com/srv1n/rzn_datasourcer/blob/main/CHANGELOG.md) for details.
+            See [CHANGELOG.md](https://github.com/srv1n/arivu/blob/main/CHANGELOG.md) for details.
             
             ## Installation
             
             ### Quick Install (Recommended)
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/srv1n/rzn_datasourcer/main/packaging/scripts/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
             ```
-            
+
             ### Homebrew (macOS/Linux)
             ```bash
-            brew install srv1n/tap/rzn-datasourcer
+            brew install srv1n/tap/arivu
             ```
             
             ### Manual Download
@@ -53,18 +53,17 @@ jobs:
             
             ## Quick Start
             ```bash
-            rzn setup                             # Interactive setup wizard
-            rzn list                              # List available connectors
-            rzn search youtube "rust programming" # Search YouTube videos
-            rzn get youtube dQw4w9WgXcQ           # Get video with transcript
-            rzn tools slack                       # Show connector tools
-            rzn config set github --value "token" # Configure credentials
+            arivu setup                             # Interactive setup wizard
+            arivu list                              # List available connectors
+            arivu search youtube "rust programming" # Search YouTube videos
+            arivu get youtube dQw4w9WgXcQ           # Get video with transcript
+            arivu tools slack                       # Show connector tools
+            arivu config set github --value "token" # Configure credentials
             ```
 
             ## Documentation
-            - [User Guide](https://github.com/srv1n/rzn_datasourcer/blob/main/CLI_USAGE.md)
-            - [Technical Documentation](https://github.com/srv1n/rzn_datasourcer/blob/main/CLI_TECHNICAL.md)
-            - [Installation Guide](https://github.com/srv1n/rzn_datasourcer/blob/main/INSTALLATION.md)
+            - [Installation Guide](https://github.com/srv1n/arivu/blob/main/INSTALLATION.md)
+            - [README](https://github.com/srv1n/arivu/blob/main/README.md)
           draft: false
           prerelease: false
 
@@ -72,6 +71,8 @@ jobs:
     name: Build Unix Targets
     needs: create-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         target:
@@ -91,7 +92,7 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -102,33 +103,26 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Binary
-        run: cross build --release --target ${{ matrix.target }} --package rzn_datasourcer_cli
+        run: cross build --release --target ${{ matrix.target }} --package arivu_cli
 
       - name: Create Archive
         run: |
           mkdir -p dist
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cp target/${{ matrix.target }}/release/rzn.exe dist/
-            cd dist && zip -r rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip rzn.exe
-          else
-            cp target/${{ matrix.target }}/release/rzn dist/
-            cd dist && tar -czf rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz rzn
-          fi
+          cp target/${{ matrix.target }}/release/arivu dist/
+          cd dist && tar -czf arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz arivu
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
-          asset_name: rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
 
   build-windows:
     name: Build Windows
     needs: create-release
     runs-on: windows-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         target:
@@ -144,7 +138,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache Dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -155,29 +149,27 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Binary
-        run: cargo build --release --target ${{ matrix.target }} --package rzn_datasourcer_cli
+        run: cargo build --release --target ${{ matrix.target }} --package arivu_cli
 
       - name: Create Archive
         run: |
           mkdir dist
-          cp target/${{ matrix.target }}/release/rzn.exe dist/
+          cp target/${{ matrix.target }}/release/arivu.exe dist/
           cd dist
-          Compress-Archive -Path rzn.exe -DestinationPath rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
+          Compress-Archive -Path arivu.exe -DestinationPath arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
-          asset_name: rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.zip
 
   build-macos:
     name: Build macOS
     needs: create-release
     runs-on: macos-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         target:
@@ -193,7 +185,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache Dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -204,40 +196,39 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Binary
-        run: cargo build --release --target ${{ matrix.target }} --package rzn_datasourcer_cli
+        run: cargo build --release --target ${{ matrix.target }} --package arivu_cli
 
       - name: Create Archive
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/rzn dist/
-          cd dist && tar -czf rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz rzn
+          cp target/${{ matrix.target }}/release/arivu dist/
+          cd dist && tar -czf arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz arivu
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
-          asset_name: rzn-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          files: dist/arivu-${{ github.ref_name || github.event.inputs.tag }}-${{ matrix.target }}.tar.gz
 
   generate-checksums:
     name: Generate Checksums
     needs: [create-release, build-unix, build-windows, build-macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download Release Assets
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const tag = context.ref ? context.ref.replace('refs/tags/', '') : context.payload.inputs.tag;
             const { data: release } = await github.rest.repos.getReleaseByTag({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag: context.ref.replace('refs/tags/', '') || context.payload.inputs.tag
+              tag: tag
             });
-            
+
             const assets = release.assets;
             for (const asset of assets) {
               const response = await github.rest.repos.getReleaseAsset({
@@ -251,18 +242,14 @@ jobs:
 
       - name: Generate Checksums
         run: |
-          sha256sum *.tar.gz *.zip > checksums.txt
+          sha256sum *.tar.gz *.zip > checksums.txt || true
           cat checksums.txt
 
       - name: Upload Checksums
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: checksums.txt
-          asset_name: checksums.txt
-          asset_content_type: text/plain
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          files: checksums.txt
 
   update-homebrew:
     name: Update Homebrew Formula
