@@ -1,0 +1,36 @@
+# Build artifacts
+/target
+**/target
+
+# IDE and editor files
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+*.env
+auth.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+token.json
+client_secret*.json
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+*.profraw
+coverage/

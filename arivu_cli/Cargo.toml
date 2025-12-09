@@ -1,0 +1,86 @@
+[package]
+name = "arivu_cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI interface for Arivu - unified data access tool"
+license = "MIT OR Apache-2.0"
+readme = "../README.md"
+repository = "https://github.com/srv1n/arivu"
+keywords = ["cli", "data", "mcp", "scraping", "api"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "arivu"
+path = "src/main.rs"
+
+[dependencies]
+# Core library (feature-forwarding from this crate)
+arivu_core = { path = "../arivu_core", default-features = false }
+
+# CLI dependencies - optimized for binary size
+clap = { version = "4.5.4", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context"] }
+owo-colors = { version = "4.2.3", default-features = false }
+indicatif = { version = "0.17.11", default-features = false }
+comfy-table = { version = "7.2.1", default-features = false }
+terminal_size = "0.4"
+textwrap = { version = "0.16", default-features = false, features = ["smawk"] }
+serde_yaml = "0.9.34"
+
+# Async runtime - only features needed for CLI
+tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
+serde_json = "1.0.145"
+thiserror = "1.0.69"
+tracing = { version = "0.1.41", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["env-filter", "fmt", "std", "smallvec"] }
+
+# Optional TUI dependencies
+ratatui = { version = "0.24.0", optional = true }
+crossterm = { version = "0.29.0", optional = true }
+
+[features]
+default = []
+full = ["all-connectors"]
+all-connectors = ["arivu_core/all-connectors"]
+
+# Fine-grained pass-through features
+reddit = ["arivu_core/reddit"]
+wikipedia = ["arivu_core/wikipedia"]
+arxiv = ["arivu_core/arxiv"]
+pubmed = ["arivu_core/pubmed"]
+semantic-scholar = ["arivu_core/semantic-scholar"]
+semantic_scholar = ["semantic-scholar"]
+web = ["arivu_core/web"]
+x-twitter = ["arivu_core/x-twitter"]
+x = ["x-twitter"]
+youtube = ["arivu_core/youtube"]
+hackernews = ["arivu_core/hackernews"]
+scihub = ["arivu_core/scihub"]
+imap = ["arivu_core/imap"]
+slack = ["arivu_core/slack"]
+github = ["arivu_core/github"]
+atlassian = ["arivu_core/atlassian"]
+
+# LLM provider web search (pass-through)
+openai-search = ["arivu_core/openai-search"]
+anthropic-search = ["arivu_core/anthropic-search"]
+gemini-search = ["arivu_core/gemini-search"]
+perplexity-search = ["arivu_core/perplexity-search"]
+xai-search = ["arivu_core/xai-search"]
+exa-search = ["arivu_core/exa-search"]
+firecrawl-search = ["arivu_core/firecrawl-search"]
+serper-search = ["arivu_core/serper-search"]
+tavily-search = ["arivu_core/tavily-search"]
+serpapi-search = ["arivu_core/serpapi-search"]
+
+# Productivity & Cloud (pass-through)
+microsoft-graph = ["arivu_core/microsoft-graph"]
+google-drive = ["arivu_core/google-drive"]
+google-gmail = ["arivu_core/google-gmail"]
+google-calendar = ["arivu_core/google-calendar"]
+google-people = ["arivu_core/google-people"]
+
+# LLM-first composite tools (enable extra macro tools)
+llm-macros = ["arivu_core/llm-macros"]
+
+tui = ["ratatui", "crossterm"]

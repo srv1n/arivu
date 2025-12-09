@@ -1,0 +1,998 @@
+use async_trait::async_trait;
+use base64::Engine;
+use imap::Error as ImapError;
+use imap::{ClientBuilder, Connection as ImapConnection, ConnectionMode, Session};
+use imap_proto::types::NameAttribute;
+use mailparse::{parse_mail, ParsedMail};
+use rmcp::model::*;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::borrow::Cow;
+use std::collections::HashSet;
+use std::sync::Arc;
+use tokio::task;
+use tracing::debug;
+
+use crate::auth::AuthDetails;
+use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
+use crate::error::ConnectorError;
+use crate::utils::structured_result_with_text;
+use crate::Connector;
+
+#[derive(Clone, Debug)]
+struct ImapConfig {
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    security: SecurityMode,
+    skip_tls_verify: bool,
+    default_mailbox: String,
+    fetch_limit: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SecurityMode {
+    AutoTls,
+    Auto,
+    Tls,
+    StartTls,
+    Plaintext,
+}
+
+impl SecurityMode {
+    fn from_str(value: Option<&str>) -> Result<Self, ConnectorError> {
+        let normalized = value.unwrap_or("autotls").trim().to_lowercase();
+        match normalized.as_str() {
+            "autotls" | "auto_tls" | "auto-tls" => Ok(SecurityMode::AutoTls),
+            "auto" => Ok(SecurityMode::Auto),
+            "tls" => Ok(SecurityMode::Tls),
+            "starttls" | "start_tls" | "start-tls" => Ok(SecurityMode::StartTls),
+            "plain" | "plaintext" => Ok(SecurityMode::Plaintext),
+            other => Err(ConnectorError::InvalidInput(format!(
+                "Unsupported IMAP security mode: {}",
+                other
+            ))),
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            SecurityMode::AutoTls => "autotls",
+            SecurityMode::Auto => "auto",
+            SecurityMode::Tls => "tls",
+            SecurityMode::StartTls => "starttls",
+            SecurityMode::Plaintext => "plaintext",
+        }
+    }
+
+    fn to_connection_mode(self) -> ConnectionMode {
+        match self {
+            SecurityMode::AutoTls => ConnectionMode::AutoTls,
+            SecurityMode::Auto => ConnectionMode::Auto,
+            SecurityMode::Tls => ConnectionMode::Tls,
+            SecurityMode::StartTls => ConnectionMode::StartTls,
+            SecurityMode::Plaintext => ConnectionMode::Plaintext,
+        }
+    }
+}
+
+pub struct ImapConnector {
+    config: Option<ImapConfig>,
+}
+
+impl ImapConnector {
+    pub async fn new(auth: AuthDetails) -> Result<Self, ConnectorError> {
+        let mut connector = Self { config: None };
+        if !auth.is_empty() {
+            connector.set_auth_details(auth).await?;
+        }
+        Ok(connector)
+    }
+
+    fn ensure_config(&self) -> Result<&ImapConfig, ConnectorError> {
+        self.config.as_ref().ok_or_else(|| {
+            ConnectorError::Authentication("IMAP credentials are not configured".to_string())
+        })
+    }
+
+    async fn with_session<F, T>(&self, f: F) -> Result<T, ConnectorError>
+    where
+        F: FnOnce(&mut Session<ImapConnection>) -> Result<T, ConnectorError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let config = self.config.clone().ok_or_else(|| {
+            ConnectorError::Authentication("IMAP credentials are not configured".to_string())
+        })?;
+
+        task::spawn_blocking(move || {
+            let mut session = Self::connect_session(&config)?;
+            let result = f(&mut session);
+            if let Err(err) = session.logout() {
+                debug!("IMAP logout error: {}", err);
+            }
+            result
+        })
+        .await
+        .map_err(|err| ConnectorError::Other(format!("IMAP task join error: {}", err)))?
+    }
+
+    fn connect_session(config: &ImapConfig) -> Result<Session<ImapConnection>, ConnectorError> {
+        let builder = ClientBuilder::new(config.host.as_str(), config.port)
+            .mode(config.security.to_connection_mode());
+        let builder = if config.skip_tls_verify {
+            builder.danger_skip_tls_verify(true)
+        } else {
+            builder
+        };
+
+        let client = builder.connect().map_err(map_imap_error)?;
+        let session = client
+            .login(&config.username, &config.password)
+            .map_err(|(err, _)| map_auth_error(err))?;
+        Ok(session)
+    }
+
+    async fn list_mailboxes(
+        &self,
+        args: ListMailboxesArgs,
+    ) -> Result<Vec<MailboxInfo>, ConnectorError> {
+        let reference = args.reference.unwrap_or_default();
+        let pattern = args.pattern.unwrap_or_else(|| "*".to_string());
+        let include_subscribed = args.include_subscribed;
+
+        self.with_session(move |session| {
+            let reference_opt = if reference.trim().is_empty() {
+                None
+            } else {
+                Some(reference.as_str())
+            };
+
+            let names = session
+                .list(reference_opt, Some(pattern.as_str()))
+                .map_err(map_imap_error)?;
+
+            let subscribed = if include_subscribed {
+                let subs = session
+                    .lsub(reference_opt, Some(pattern.as_str()))
+                    .map_err(map_imap_error)?;
+                let mut set = HashSet::new();
+                for entry in subs.iter() {
+                    set.insert(entry.name().to_string());
+                }
+                Some(set)
+            } else {
+                None
+            };
+
+            let mut results = Vec::new();
+            for entry in names.iter() {
+                let name_str = entry.name().to_string();
+                let is_selectable = !entry
+                    .attributes()
+                    .iter()
+                    .any(|attr| matches!(attr, NameAttribute::NoSelect));
+                let is_subscribed = subscribed
+                    .as_ref()
+                    .is_some_and(|set| set.contains(&name_str));
+
+                results.push(MailboxInfo {
+                    name: name_str,
+                    delimiter: entry.delimiter().map(|s| s.to_string()),
+                    attributes: entry.attributes().iter().map(attribute_to_string).collect(),
+                    selectable: is_selectable,
+                    subscribed: is_subscribed,
+                });
+            }
+
+            Ok(results)
+        })
+        .await
+    }
+
+    async fn fetch_messages(
+        &self,
+        args: FetchMessagesArgs,
+    ) -> Result<Vec<MessageSummary>, ConnectorError> {
+        let config = self.ensure_config()?;
+        let mailbox = args
+            .mailbox
+            .unwrap_or_else(|| config.default_mailbox.clone());
+        let mut limit = args.limit.unwrap_or(config.fetch_limit);
+        if limit == 0 {
+            limit = config.fetch_limit;
+        }
+        limit = limit.clamp(1, 500);
+
+        self.with_session(move |session| {
+            session.select(&mailbox).map_err(map_imap_error)?;
+            let mut uids: Vec<u32> = session
+                .uid_search("ALL")
+                .map_err(map_imap_error)?
+                .into_iter()
+                .collect();
+
+            if uids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            uids.sort_unstable();
+            let take_start = if uids.len() > limit {
+                uids.len() - limit
+            } else {
+                0
+            };
+            let selected: Vec<String> = uids[take_start..]
+                .iter()
+                .map(|uid| uid.to_string())
+                .collect();
+            let sequence = selected.join(",");
+
+            let fetches = session
+                .uid_fetch(&sequence, "(UID ENVELOPE FLAGS INTERNALDATE RFC822.SIZE)")
+                .map_err(map_imap_error)?;
+
+            let mut messages = Vec::new();
+            for fetch in fetches.iter() {
+                messages.push(build_message_summary(fetch));
+            }
+
+            Ok(messages)
+        })
+        .await
+    }
+
+    async fn get_message(&self, args: GetMessageArgs) -> Result<MessageDetails, ConnectorError> {
+        let config = self.ensure_config()?;
+        let mailbox = args
+            .mailbox
+            .unwrap_or_else(|| config.default_mailbox.clone());
+        let include_raw = args.include_raw;
+        let uid = args.uid;
+
+        self.with_session(move |session| {
+            session.select(&mailbox).map_err(map_imap_error)?;
+            let fetches = session
+                .uid_fetch(
+                    uid.to_string(),
+                    "(UID ENVELOPE FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[])",
+                )
+                .map_err(map_imap_error)?;
+            let fetch = fetches
+                .iter()
+                .next()
+                .ok_or(ConnectorError::ResourceNotFound)?;
+
+            let summary = build_message_summary(fetch);
+            let raw_body = fetch.body().map(|b| b.to_vec());
+            let (text_body, html_body, headers) = raw_body
+                .as_ref()
+                .map(|body| parse_message_bodies(body))
+                .unwrap_or_default();
+            let raw_encoded = if include_raw {
+                raw_body
+                    .as_ref()
+                    .map(|body| base64::engine::general_purpose::STANDARD.encode(body))
+            } else {
+                None
+            };
+
+            Ok(MessageDetails {
+                summary,
+                headers,
+                text_body,
+                html_body,
+                raw: raw_encoded,
+            })
+        })
+        .await
+    }
+
+    async fn search(&self, args: SearchArgs) -> Result<SearchResults, ConnectorError> {
+        let config = self.ensure_config()?;
+        let mailbox = args
+            .mailbox
+            .unwrap_or_else(|| config.default_mailbox.clone());
+        let query = args.query;
+        let mut limit = args.limit.unwrap_or(config.fetch_limit);
+        if limit == 0 {
+            limit = config.fetch_limit;
+        }
+        limit = limit.clamp(1, 1000);
+
+        self.with_session(move |session| {
+            session.select(&mailbox).map_err(map_imap_error)?;
+            let mut uids: Vec<u32> = session
+                .uid_search(&query)
+                .map_err(map_imap_error)?
+                .into_iter()
+                .collect();
+            uids.sort_unstable();
+            if uids.len() > limit {
+                uids.drain(0..uids.len() - limit);
+            }
+
+            Ok(SearchResults {
+                mailbox,
+                query,
+                uids,
+            })
+        })
+        .await
+    }
+}
+
+fn build_message_summary(fetch: &imap::types::Fetch<'_>) -> MessageSummary {
+    let envelope = fetch.envelope();
+    let subject = envelope
+        .and_then(|env| env.subject.as_ref())
+        .map(|s| decode_bytes(s));
+    let date = envelope
+        .and_then(|env| env.date.as_ref())
+        .map(|d| decode_bytes(d));
+    let message_id = envelope
+        .and_then(|env| env.message_id.as_ref())
+        .map(|d| decode_bytes(d));
+    let from = envelope
+        .and_then(|env| env.from.as_ref())
+        .map(|addresses| decode_address_list(addresses))
+        .unwrap_or_default();
+    let to = envelope
+        .and_then(|env| env.to.as_ref())
+        .map(|addresses| decode_address_list(addresses))
+        .unwrap_or_default();
+    let cc = envelope
+        .and_then(|env| env.cc.as_ref())
+        .map(|addresses| decode_address_list(addresses))
+        .unwrap_or_default();
+    let bcc = envelope
+        .and_then(|env| env.bcc.as_ref())
+        .map(|addresses| decode_address_list(addresses))
+        .unwrap_or_default();
+
+    MessageSummary {
+        uid: fetch.uid,
+        sequence: fetch.message,
+        subject,
+        from,
+        to,
+        cc,
+        bcc,
+        date,
+        message_id,
+        internal_date: fetch.internal_date().map(|dt| dt.to_rfc3339()),
+        flags: fetch.flags().iter().map(|flag| flag.to_string()).collect(),
+        size: fetch.size,
+    }
+}
+
+fn decode_bytes(data: &[u8]) -> String {
+    let text = String::from_utf8_lossy(data);
+    text.trim_matches(|c: char| c == '\r' || c == '\n')
+        .to_string()
+}
+
+fn decode_address_list(addresses: &[imap_proto::types::Address<'_>]) -> Vec<String> {
+    addresses.iter().map(format_address).collect()
+}
+
+fn format_address(address: &imap_proto::types::Address<'_>) -> String {
+    let mailbox = address
+        .mailbox
+        .as_ref()
+        .map(|v| decode_bytes(v))
+        .unwrap_or_default();
+    let host = address
+        .host
+        .as_ref()
+        .map(|v| decode_bytes(v))
+        .unwrap_or_default();
+    let email = if !mailbox.is_empty() && !host.is_empty() {
+        format!("{}@{}", mailbox, host)
+    } else {
+        mailbox.clone()
+    };
+
+    match address.name.as_ref().map(|n| decode_bytes(n)) {
+        Some(name) if !email.is_empty() => format!("{} <{}>", name, email),
+        Some(name) => name,
+        None => email,
+    }
+}
+
+fn attribute_to_string(attr: &NameAttribute<'_>) -> String {
+    match attr {
+        NameAttribute::NoInferiors => "\\NoInferiors".to_string(),
+        NameAttribute::NoSelect => "\\NoSelect".to_string(),
+        NameAttribute::Marked => "\\Marked".to_string(),
+        NameAttribute::Unmarked => "\\Unmarked".to_string(),
+        NameAttribute::All => "\\All".to_string(),
+        NameAttribute::Archive => "\\Archive".to_string(),
+        NameAttribute::Drafts => "\\Drafts".to_string(),
+        NameAttribute::Flagged => "\\Flagged".to_string(),
+        NameAttribute::Junk => "\\Junk".to_string(),
+        NameAttribute::Sent => "\\Sent".to_string(),
+        NameAttribute::Trash => "\\Trash".to_string(),
+        NameAttribute::Extension(value) => value.to_string(),
+        other => format!("\\{:?}", other),
+    }
+}
+
+fn parse_message_bodies(raw: &[u8]) -> (Option<String>, Option<String>, Vec<HeaderLine>) {
+    if let Ok(parsed) = parse_mail(raw) {
+        let headers = parsed
+            .headers
+            .iter()
+            .map(|header| HeaderLine {
+                name: header.get_key(),
+                value: header.get_value(),
+            })
+            .collect();
+        let plain = extract_body_by_mime(&parsed, "text/plain").or_else(|| parsed.get_body().ok());
+        let html = extract_body_by_mime(&parsed, "text/html");
+        (plain, html, headers)
+    } else {
+        (None, None, Vec::new())
+    }
+}
+
+fn extract_body_by_mime(parsed: &ParsedMail<'_>, target: &str) -> Option<String> {
+    if parsed.ctype.mimetype.eq_ignore_ascii_case(target) {
+        return parsed.get_body().ok();
+    }
+
+    for part in &parsed.subparts {
+        if let Some(body) = extract_body_by_mime(part, target) {
+            return Some(body);
+        }
+    }
+    None
+}
+
+#[derive(Debug, Deserialize)]
+struct ListMailboxesArgs {
+    #[serde(default)]
+    reference: Option<String>,
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default)]
+    include_subscribed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct FetchMessagesArgs {
+    #[serde(default)]
+    mailbox: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetMessageArgs {
+    uid: u32,
+    #[serde(default)]
+    mailbox: Option<String>,
+    #[serde(default)]
+    include_raw: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchArgs {
+    query: String,
+    #[serde(default)]
+    mailbox: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct MailboxInfo {
+    name: String,
+    delimiter: Option<String>,
+    attributes: Vec<String>,
+    selectable: bool,
+    subscribed: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct MessageSummary {
+    uid: Option<u32>,
+    sequence: u32,
+    subject: Option<String>,
+    from: Vec<String>,
+    to: Vec<String>,
+    cc: Vec<String>,
+    bcc: Vec<String>,
+    date: Option<String>,
+    message_id: Option<String>,
+    internal_date: Option<String>,
+    flags: Vec<String>,
+    size: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct HeaderLine {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MessageDetails {
+    summary: MessageSummary,
+    headers: Vec<HeaderLine>,
+    text_body: Option<String>,
+    html_body: Option<String>,
+    raw: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchResults {
+    mailbox: String,
+    query: String,
+    uids: Vec<u32>,
+}
+
+fn map_imap_error(err: ImapError) -> ConnectorError {
+    match err {
+        ImapError::Io(inner) => ConnectorError::Io(inner),
+        ImapError::Validate(inner) => ConnectorError::InvalidInput(inner.to_string()),
+        ImapError::Parse(inner) => ConnectorError::Other(format!("IMAP parse error: {}", inner)),
+        ImapError::Bad(bad) => ConnectorError::Other(format!("IMAP BAD: {}", bad.information)),
+        ImapError::No(no) => ConnectorError::Other(format!("IMAP NO: {}", no.information)),
+        ImapError::Bye(bye) => ConnectorError::Other(format!("IMAP BYE: {}", bye.information)),
+        other => ConnectorError::Other(format!("IMAP error: {}", other)),
+    }
+}
+
+fn map_auth_error(err: ImapError) -> ConnectorError {
+    match err {
+        ImapError::Bad(bad) => ConnectorError::Authentication(bad.information),
+        ImapError::No(no) => ConnectorError::Authentication(no.information),
+        other => map_imap_error(other),
+    }
+}
+
+#[async_trait]
+impl Connector for ImapConnector {
+    fn name(&self) -> &'static str {
+        "imap"
+    }
+
+    fn description(&self) -> &'static str {
+        "An IMAP connector providing mailbox discovery and message retrieval."
+    }
+
+    async fn capabilities(&self) -> ServerCapabilities {
+        ServerCapabilities {
+            tools: None,
+            ..Default::default()
+        }
+    }
+
+    async fn initialize(
+        &self,
+        _request: InitializeRequestParam,
+    ) -> Result<InitializeResult, ConnectorError> {
+        Ok(InitializeResult {
+            protocol_version: ProtocolVersion::LATEST,
+            capabilities: self.capabilities().await,
+            server_info: Implementation {
+                name: self.name().to_string(),
+                title: None,
+                version: "0.1.0".to_string(),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(
+                "Use the IMAP connector to inspect mailboxes, list messages, search, and fetch message details.".to_string(),
+            ),
+        })
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+    ) -> Result<ListResourcesResult, ConnectorError> {
+        let config = self.ensure_config()?;
+        let mailboxes = self
+            .list_mailboxes(ListMailboxesArgs {
+                reference: None,
+                pattern: None,
+                include_subscribed: true,
+            })
+            .await?;
+
+        let mut resources = Vec::new();
+        for mailbox in mailboxes {
+            let uri = format!("imap://mailbox/{}", urlencoding::encode(&mailbox.name));
+            resources.push(Resource {
+                raw: RawResource {
+                    uri,
+                    name: mailbox.name.clone(),
+                    title: None,
+                    description: Some(format!(
+                        "Mailbox on {} (selectable: {}, subscribed: {})",
+                        config.host, mailbox.selectable, mailbox.subscribed
+                    )),
+                    mime_type: Some("application/vnd.imap.mailbox+json".to_string()),
+                    size: None,
+                    icons: None,
+                },
+                annotations: None,
+            });
+        }
+
+        Ok(ListResourcesResult {
+            resources,
+            next_cursor: None,
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+    ) -> Result<Vec<ResourceContents>, ConnectorError> {
+        let uri = request.uri.as_str();
+        let config = self.ensure_config()?;
+        if let Some(encoded) = uri.strip_prefix("imap://mailbox/") {
+            let mailbox = urlencoding::decode(encoded)
+                .map_err(|err| {
+                    ConnectorError::InvalidInput(format!("Invalid mailbox URI: {}", err))
+                })?
+                .to_string();
+            let messages = self
+                .fetch_messages(FetchMessagesArgs {
+                    mailbox: Some(mailbox.clone()),
+                    limit: Some(config.fetch_limit),
+                })
+                .await?;
+            let body = serde_json::to_string_pretty(&messages)
+                .map_err(|err| ConnectorError::Other(err.to_string()))?;
+            return Ok(vec![ResourceContents::text(body, uri)]);
+        }
+
+        if let Some(rest) = uri.strip_prefix("imap://message/") {
+            let parts: Vec<&str> = rest.split('/').collect();
+            if parts.len() != 2 {
+                return Err(ConnectorError::InvalidInput(format!(
+                    "Invalid message URI: {}",
+                    uri
+                )));
+            }
+            let mailbox = urlencoding::decode(parts[0])
+                .map_err(|err| {
+                    ConnectorError::InvalidInput(format!("Invalid mailbox in URI: {}", err))
+                })?
+                .to_string();
+            let uid: u32 = parts[1].parse().map_err(|err| {
+                ConnectorError::InvalidInput(format!("Invalid UID in URI: {}", err))
+            })?;
+            let message = self
+                .get_message(GetMessageArgs {
+                    uid,
+                    mailbox: Some(mailbox),
+                    include_raw: false,
+                })
+                .await?;
+            let body = serde_json::to_string_pretty(&message)
+                .map_err(|err| ConnectorError::Other(err.to_string()))?;
+            return Ok(vec![ResourceContents::text(body, uri)]);
+        }
+
+        Err(ConnectorError::ResourceNotFound)
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+    ) -> Result<ListToolsResult, ConnectorError> {
+        let tools = vec![
+            Tool {
+                name: Cow::Borrowed("list_mailboxes"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "List mailboxes available on the IMAP server.",
+                )),
+                input_schema: Arc::new(
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "reference": { "type": "string", "description": "IMAP reference name (defaults to root)." },
+                            "pattern": { "type": "string", "description": "Mailbox pattern, defaults to '*'." },
+                            "include_subscribed": { "type": "boolean", "description": "Whether to include subscription information." }
+                        }
+                    })
+                    .as_object()
+                    .expect("Schema object")
+                    .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("fetch_messages"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Fetch recent message summaries from a mailbox.",
+                )),
+                input_schema: Arc::new(
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "mailbox": { "type": "string", "description": "Mailbox name (defaults to configured default)." },
+                            "limit": { "type": "integer", "description": "Maximum number of messages to return." }
+                        }
+                    })
+                    .as_object()
+                    .expect("Schema object")
+                    .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("get_message"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Fetch a full message (headers and body) by UID.",
+                )),
+                input_schema: Arc::new(
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "mailbox": { "type": "string", "description": "Mailbox containing the message." },
+                            "uid": { "type": "integer", "description": "Message UID." },
+                            "include_raw": { "type": "boolean", "description": "Include base64 encoded raw message." }
+                        },
+                        "required": ["uid"]
+                    })
+                    .as_object()
+                    .expect("Schema object")
+                    .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("search"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Execute an IMAP search query within a mailbox.",
+                )),
+                input_schema: Arc::new(
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "mailbox": { "type": "string", "description": "Mailbox to search." },
+                            "query": { "type": "string", "description": "IMAP search query (e.g. 'UNSEEN', 'FROM \"alice\" SINCE 1-Jan-2024')." },
+                            "limit": { "type": "integer", "description": "Maximum number of UIDs to return." }
+                        },
+                        "required": ["query"]
+                    })
+                    .as_object()
+                    .expect("Schema object")
+                    .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+        ];
+
+        Ok(ListToolsResult {
+            tools,
+            next_cursor: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult, ConnectorError> {
+        let args_value = Value::Object(request.arguments.unwrap_or_default());
+
+        match request.name.as_ref() {
+            "list_mailboxes" => {
+                let parsed: ListMailboxesArgs = serde_json::from_value(args_value.clone())
+                    .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
+                let mailboxes = self.list_mailboxes(parsed).await?;
+                structured_result_with_text(&mailboxes, None)
+            }
+            "fetch_messages" => {
+                let parsed: FetchMessagesArgs = serde_json::from_value(args_value.clone())
+                    .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
+                let messages = self.fetch_messages(parsed).await?;
+                structured_result_with_text(&messages, None)
+            }
+            "get_message" => {
+                let parsed: GetMessageArgs = serde_json::from_value(args_value.clone())
+                    .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
+                let message = self.get_message(parsed).await?;
+                structured_result_with_text(&message, None)
+            }
+            "search" => {
+                let parsed: SearchArgs = serde_json::from_value(args_value)
+                    .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
+                let results = self.search(parsed).await?;
+                structured_result_with_text(&results, None)
+            }
+            _ => Err(ConnectorError::ToolNotFound),
+        }
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+    ) -> Result<ListPromptsResult, ConnectorError> {
+        Ok(ListPromptsResult {
+            prompts: Vec::new(),
+            next_cursor: None,
+        })
+    }
+
+    async fn get_prompt(&self, _name: &str) -> Result<Prompt, ConnectorError> {
+        Err(ConnectorError::ResourceNotFound)
+    }
+
+    async fn get_auth_details(&self) -> Result<AuthDetails, ConnectorError> {
+        let mut auth = AuthDetails::new();
+        if let Some(config) = &self.config {
+            auth.insert("host".to_string(), config.host.clone());
+            auth.insert("port".to_string(), config.port.to_string());
+            auth.insert("username".to_string(), config.username.clone());
+            auth.insert("security".to_string(), config.security.as_str().to_string());
+            auth.insert(
+                "skip_tls_verify".to_string(),
+                config.skip_tls_verify.to_string(),
+            );
+            auth.insert(
+                "default_mailbox".to_string(),
+                config.default_mailbox.clone(),
+            );
+            auth.insert(
+                "default_fetch_limit".to_string(),
+                config.fetch_limit.to_string(),
+            );
+        }
+        Ok(auth)
+    }
+
+    async fn set_auth_details(&mut self, details: AuthDetails) -> Result<(), ConnectorError> {
+        let host = details
+            .get("host")
+            .ok_or_else(|| ConnectorError::InvalidInput("IMAP host is required".to_string()))?
+            .to_string();
+        let port_str = details.get("port").map(|v| v.as_str()).unwrap_or("993");
+        let port: u16 = port_str
+            .parse()
+            .map_err(|err| ConnectorError::InvalidInput(format!("Invalid IMAP port: {}", err)))?;
+        let username = details
+            .get("username")
+            .ok_or_else(|| ConnectorError::InvalidInput("IMAP username is required".to_string()))?
+            .to_string();
+        let password = details
+            .get("password")
+            .ok_or_else(|| ConnectorError::InvalidInput("IMAP password is required".to_string()))?
+            .to_string();
+        let security = SecurityMode::from_str(details.get("security").map(|s| s.as_str()))?;
+        let skip_tls_verify = details
+            .get("skip_tls_verify")
+            .map(|v| matches!(v.as_str(), "true" | "1" | "yes" | "on"))
+            .unwrap_or(false);
+        let default_mailbox = details
+            .get("default_mailbox")
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "INBOX".to_string());
+        let fetch_limit = details
+            .get("default_fetch_limit")
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(50);
+
+        self.config = Some(ImapConfig {
+            host,
+            port,
+            username,
+            password,
+            security,
+            skip_tls_verify,
+            default_mailbox,
+            fetch_limit,
+        });
+
+        Ok(())
+    }
+
+    async fn test_auth(&self) -> Result<(), ConnectorError> {
+        self.with_session(|session| {
+            session.noop().map_err(map_imap_error)?;
+            Ok(())
+        })
+        .await
+    }
+
+    fn config_schema(&self) -> ConnectorConfigSchema {
+        ConnectorConfigSchema {
+            fields: vec![
+                Field {
+                    name: "host".to_string(),
+                    label: "IMAP Host".to_string(),
+                    field_type: FieldType::Text,
+                    required: true,
+                    description: Some("Hostname of the IMAP server.".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "port".to_string(),
+                    label: "Port".to_string(),
+                    field_type: FieldType::Number,
+                    required: false,
+                    description: Some("IMAP port (default 993).".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "username".to_string(),
+                    label: "Username".to_string(),
+                    field_type: FieldType::Text,
+                    required: true,
+                    description: Some("Account username.".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "password".to_string(),
+                    label: "Password".to_string(),
+                    field_type: FieldType::Secret,
+                    required: true,
+                    description: Some("Account password.".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "security".to_string(),
+                    label: "Security".to_string(),
+                    field_type: FieldType::Select {
+                        options: vec![
+                            "autotls".to_string(),
+                            "auto".to_string(),
+                            "tls".to_string(),
+                            "starttls".to_string(),
+                            "plaintext".to_string(),
+                        ],
+                    },
+                    required: false,
+                    description: Some("Connection security mode.".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "skip_tls_verify".to_string(),
+                    label: "Skip TLS Verification".to_string(),
+                    field_type: FieldType::Boolean,
+                    required: false,
+                    description: Some(
+                        "Allow invalid TLS certificates (not recommended).".to_string(),
+                    ),
+                    options: None,
+                },
+                Field {
+                    name: "default_mailbox".to_string(),
+                    label: "Default Mailbox".to_string(),
+                    field_type: FieldType::Text,
+                    required: false,
+                    description: Some("Mailbox used when none is specified.".to_string()),
+                    options: None,
+                },
+                Field {
+                    name: "default_fetch_limit".to_string(),
+                    label: "Default Fetch Limit".to_string(),
+                    field_type: FieldType::Number,
+                    required: false,
+                    description: Some("Default number of messages to fetch.".to_string()),
+                    options: None,
+                },
+            ],
+        }
+    }
+}
