@@ -15,7 +15,7 @@ async-trait = "0.1.89"
 serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
 serde_json = "1.0.145"
 tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "io-std", "process"] }
-thiserror = "1.0.69"
+thiserror = "2.0.17"
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "cookies", "rustls-tls"] }
 rayon = "1.10"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
