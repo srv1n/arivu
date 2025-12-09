@@ -1,0 +1,48 @@
+[package]
+name = "arivu_mcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server for Arivu - Model Context Protocol compliant server"
+license = "MIT OR Apache-2.0"
+readme = "../README.md"
+repository = "https://github.com/srv1n/arivu"
+keywords = ["mcp", "server", "data", "protocol"]
+categories = ["network-programming"]
+
+[[bin]]
+name = "arivu_mcp"
+path = "src/main.rs"
+
+[dependencies]
+# Core library with feature forwarding
+arivu_core = { path = "../arivu_core", default-features = false }
+
+# MCP and async
+rmcp = "0.8.0"
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros", "signal", "time", "io-util"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "1.0.69"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["env-filter", "fmt", "std"] }
+
+[features]
+default = []
+full = ["all-connectors"]
+all-connectors = ["arivu_core/all-connectors"]
+
+# Fine-grained pass-through
+reddit = ["arivu_core/reddit"]
+wikipedia = ["arivu_core/wikipedia"]
+arxiv = ["arivu_core/arxiv"]
+pubmed = ["arivu_core/pubmed"]
+semantic-scholar = ["arivu_core/semantic-scholar"]
+semantic_scholar = ["semantic-scholar"]
+web = ["arivu_core/web"]
+x-twitter = ["arivu_core/x-twitter"]
+x = ["x-twitter"]
+youtube = ["arivu_core/youtube"]
+hackernews = ["arivu_core/hackernews"]
+scihub = ["arivu_core/scihub"]
+imap = ["arivu_core/imap"]
+macos-automation = ["arivu_core/macos-automation"]

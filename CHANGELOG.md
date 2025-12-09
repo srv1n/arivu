@@ -1,0 +1,98 @@
+# Changelog
+
+All notable changes to Arivu will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Interactive setup wizard (`arivu setup`)
+- Comprehensive connector documentation
+- GitHub Actions release workflow for all platforms
+- Homebrew formula and install script
+- Cross-platform binary releases (macOS, Linux, Windows)
+
+### Changed
+- Improved CLI help messages and examples
+- Updated installation documentation
+
+## [0.1.0] - 2024-XX-XX
+
+### Added
+
+#### Core
+- Model Context Protocol (MCP) compliant connector architecture
+- Unified `Connector` trait for standardized data source integration
+- Thread-safe `ProviderRegistry` for connector management
+- Schema-driven authentication system
+- Structured error handling with `ConnectorError`
+
+#### CLI (`arivu`)
+- `list` - List available connectors
+- `search` - Search across connectors
+- `get` - Fetch specific content by ID
+- `tools` - Show connector tools and parameters
+- `config` - Manage authentication
+- `setup` - Interactive configuration wizard
+- `call` - Call connector tools directly
+- Multiple output formats: pretty, JSON, YAML, Markdown
+
+#### MCP Server
+- Full MCP protocol compliance
+- JSON-RPC over stdio transport
+- Tool aggregation across all connectors
+
+#### Connectors
+
+**Media & Social**
+- YouTube - Video details, transcripts, chapters, search
+- Reddit - Posts, comments, subreddits, user profiles
+- X (Twitter) - Tweets, profiles, timelines, DMs
+- Hacker News - Stories, comments, search
+
+**Academic & Research**
+- arXiv - Paper search and PDF retrieval
+- PubMed - Medical literature
+- Semantic Scholar - Academic papers with citations
+- SciHub - Research paper access
+
+**AI-Powered Search**
+- OpenAI Web Search (Responses API)
+- Anthropic/Claude Web Search
+- Gemini Search (Google)
+- Perplexity Search
+- Tavily, Exa, Firecrawl
+- X.AI Grok Search
+
+**Productivity**
+- Slack - Channels, messages, files, search
+- GitHub - Issues, PRs, code search, files
+- Atlassian - Jira issues, Confluence pages
+
+**Google Workspace**
+- Gmail - Messages and search
+- Calendar - Events and scheduling
+- Drive - Files and folders
+- People/Contacts
+
+**Microsoft 365**
+- Outlook, Teams, OneDrive via Microsoft Graph
+
+**Web Scraping**
+- Generic web scraper
+
+**Reference**
+- Wikipedia - Articles, search, geo-search
+
+### Security
+- Secure credential storage in user config directory
+- Browser cookie extraction for authenticated services
+- No credentials stored in code or logs
+- Environment variable support for all secrets
+
+---
+
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/srv1n/arivu/releases/tag/v0.1.0
