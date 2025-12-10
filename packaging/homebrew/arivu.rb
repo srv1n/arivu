@@ -7,18 +7,18 @@ class Arivu < Formula
   on_macos do
     on_arm do
       url "https://github.com/srv1n/arivu/releases/download/v#{version}/arivu-v#{version}-aarch64-apple-darwin.tar.gz"
-      sha256 "d390c4e2f570d70359e47ea696dad15b1105d3dfcac66a12fd80ab1cb402c869"
+      sha256 "13c36271d851db7278c82be74e350ee6277bc3223ac06ffc9dc3d129919d5dde"
     end
     on_intel do
       url "https://github.com/srv1n/arivu/releases/download/v#{version}/arivu-v#{version}-x86_64-apple-darwin.tar.gz"
-      sha256 "c24e17de6eeb5c9ba3c194bc424c276a8c99509b26810cce06fe69fda23c536e"
+      sha256 "31b6e9b246a1233487235204cca8e74b41870419d986fb9ea4ac55d0b9674b4a"
     end
   end
 
   on_linux do
     on_intel do
       url "https://github.com/srv1n/arivu/releases/download/v#{version}/arivu-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "5e0de9db182cb7d2378dc14b87f6d0ecd6b638fbe10467658b968566b044c748"
+      sha256 "60722e85066ea5d88315947d417deea3667739f8785d8314cde00f62d98f71b1"
     end
   end
 
