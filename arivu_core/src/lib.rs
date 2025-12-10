@@ -26,10 +26,10 @@ pub use rmcp::model::{
 
 use crate::error::ConnectorError;
 use async_trait::async_trait;
-#[cfg(feature = "browser-cookies")]
-pub use rookie::{brave, chrome, common::enums::CookieToString, firefox};
 #[cfg(all(feature = "browser-cookies", target_os = "macos"))]
 pub use rookie::safari;
+#[cfg(feature = "browser-cookies")]
+pub use rookie::{brave, chrome, common::enums::CookieToString, firefox};
 use std::collections::HashMap;
 // use crate::capabilities::Capabilities; // Keep for config schema
 use crate::auth::AuthDetails;

@@ -3,10 +3,10 @@ use chrono::{Datelike, Duration, Utc};
 #[cfg(feature = "browser-cookies")]
 use publicsuffix::{List, Psl};
 use rmcp::model::CallToolResult;
-#[cfg(feature = "browser-cookies")]
-use rookie::{brave, chrome, common::enums::CookieToString, firefox};
 #[cfg(all(feature = "browser-cookies", target_os = "macos"))]
 use rookie::safari;
+#[cfg(feature = "browser-cookies")]
+use rookie::{brave, chrome, common::enums::CookieToString, firefox};
 use serde::Serialize;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use thiserror::Error;
