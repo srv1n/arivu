@@ -103,6 +103,34 @@ impl SmartResolver {
                     }
                 }
 
+                // Special handling for biorxiv/medrxiv server argument
+                if pattern.id == "biorxiv_url" {
+                    if let Some(server_match) = captures.name("server") {
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String(server_match.as_str().to_string()),
+                        );
+                    }
+                } else if pattern.id == "biorxiv_doi" {
+                    if let Some(prefix_match) = captures.name("prefix") {
+                        let server = match prefix_match.as_str() {
+                            "biorxiv" => "biorxiv",
+                            "medrxiv" => "medrxiv",
+                            _ => "biorxiv", // Default if prefix is not biorxiv/medrxiv (should not happen with regex)
+                        };
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String(server.to_string()),
+                        );
+                    } else {
+                        // Default to biorxiv if no prefix is matched (e.g. bare DOI)
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String("biorxiv".to_string()),
+                        );
+                    }
+                }
+
                 return Some(ResolvedAction {
                     connector: pattern.connector.to_string(),
                     tool: pattern.tool.to_string(),
@@ -130,6 +158,34 @@ impl SmartResolver {
                         arguments.insert(
                             arg_name.to_string(),
                             serde_json::Value::String(m.as_str().to_string()),
+                        );
+                    }
+                }
+
+                // Special handling for biorxiv/medrxiv server argument
+                if pattern.id == "biorxiv_url" {
+                    if let Some(server_match) = captures.name("server") {
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String(server_match.as_str().to_string()),
+                        );
+                    }
+                } else if pattern.id == "biorxiv_doi" {
+                    if let Some(prefix_match) = captures.name("prefix") {
+                        let server = match prefix_match.as_str() {
+                            "biorxiv" => "biorxiv",
+                            "medrxiv" => "medrxiv",
+                            _ => "biorxiv", // Default if prefix is not biorxiv/medrxiv (should not happen with regex)
+                        };
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String(server.to_string()),
+                        );
+                    } else {
+                        // Default to biorxiv if no prefix is matched (e.g. bare DOI)
+                        arguments.insert(
+                            "server".to_string(),
+                            serde_json::Value::String("biorxiv".to_string()),
                         );
                     }
                 }
@@ -471,6 +527,52 @@ fn build_default_patterns() -> Vec<InputPattern> {
             description: "X/Twitter handle (@username)",
         },
 
+        // === bioRxiv / medRxiv ===
+        InputPattern {
+            id: "biorxiv_url",
+            connector: "biorxiv",
+            tool: "get_preprint_by_doi",
+            pattern: Regex::new(r"https?://(?:www\.)?(?P<server>biorxiv|medrxiv)\.org/content/(?P<doi>10\.1101/[^\s]+)").unwrap(),
+            captures: &["server", "doi"],
+            arg_mapping: &[("doi", "doi")], // Server will be handled in resolve_all
+            priority: 100,
+            description: "bioRxiv/medRxiv paper URL (e.g., https://biorxiv.org/content/10.1101/2024.01.01.000000)",
+        },
+        InputPattern {
+            id: "biorxiv_doi",
+            connector: "biorxiv",
+            tool: "get_preprint_by_doi",
+            pattern: Regex::new(r"^(?P<prefix>biorxiv|medrxiv):(?P<doi>10\.1101/[^\s]+)$").unwrap(),
+            captures: &["prefix", "doi"],
+            arg_mapping: &[("doi", "doi")], // Server will be handled in resolve_all
+            priority: 95,
+            description: "bioRxiv/medRxiv DOI (e.g., biorxiv:10.1101/2024.01.01.000000)",
+        },
+
+        // === RSS ===
+        InputPattern {
+            id: "rss_feed_url",
+            connector: "rss",
+            tool: "get_feed",
+            pattern: Regex::new(r"^(?P<url>https?://[^\s]+\.(?:rss|xml|atom|json|feed)(?:[^\s]*))$").unwrap(),
+            captures: &["url"],
+            arg_mapping: &[("url", "url")],
+            priority: 90,
+            description: "Direct RSS/Atom/JSON feed URL",
+        },
+
+        // === Discord ===
+        InputPattern {
+            id: "discord_channel_url",
+            connector: "discord",
+            tool: "read_messages",
+            pattern: Regex::new(r"https?://(?:www\.)?discord\.com/channels/(?:@me|(?P<guild_id>\d+))/(?P<channel_id>\d+)").unwrap(),
+            captures: &["channel_id"],
+            arg_mapping: &[("channel_id", "channel_id")],
+            priority: 80,
+            description: "Discord channel URL (e.g., https://discord.com/channels/12345/67890)",
+        },
+
         // === Generic Web URLs ===
         InputPattern {
             id: "web_url",
@@ -523,6 +625,12 @@ fn get_pattern_example(pattern_id: &str) -> String {
         "twitter_tweet_url" => "https://x.com/elonmusk/status/1234567890",
         "twitter_profile_url" => "https://x.com/elonmusk",
         "twitter_handle" => "@elonmusk",
+        "biorxiv_url" => "https://biorxiv.org/content/10.1101/2024.01.01.000000",
+        "biorxiv_doi" => "biorxiv:10.1101/2024.01.01.000000",
+        "rss_feed_url" => "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+        "discord_channel_url" => {
+            "https://discord.com/channels/123456789012345678/987654321098765432"
+        }
         "web_url" => "https://example.com/page",
         _ => "",
     }
