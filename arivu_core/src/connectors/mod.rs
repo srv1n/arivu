@@ -2,8 +2,14 @@
 pub mod arxiv;
 #[cfg(feature = "atlassian")]
 pub mod atlassian;
+#[cfg(feature = "biorxiv")]
+pub mod biorxiv;
+#[cfg(feature = "discord")]
+pub mod discord;
 #[cfg(feature = "github")]
 pub mod github;
+#[cfg(feature = "google-scholar")]
+pub mod google_scholar;
 #[cfg(feature = "hackernews")]
 pub mod hackernews;
 #[cfg(feature = "imap")]
@@ -14,6 +20,8 @@ pub mod macos;
 pub mod pubmed;
 #[cfg(feature = "reddit")]
 pub mod reddit;
+#[cfg(feature = "rss")]
+pub mod rss;
 #[cfg(feature = "scihub")]
 pub mod scihub;
 #[cfg(feature = "semantic-scholar")]

@@ -49,6 +49,8 @@ imap = { version = "3.0.0-alpha.15", optional = true }
 imap-proto = { version = "0.16.6", optional = true }
 mailparse = { version = "0.16.1", optional = true }
 octocrab = { version = "0.32.0", optional = true }
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"], optional = true }
+feed-rs = { version = "1.5", optional = true }
 
 # Phase 1: Microsoft Graph and Google Drive (optional, behind features)
 graph-rs-sdk = { version = "0.3.1", optional = true }
@@ -77,10 +79,15 @@ all-connectors = [
     "slack", "github", "atlassian",
     "openai-search", "anthropic-search", "gemini-search", "perplexity-search",
     "xai-search", "exa-search", "firecrawl-search", "serper-search", "tavily-search", "serpapi-search",
-    "macos-automation"
+    "macos-automation",
+    "biorxiv", "rss", "discord", "google-scholar"
 ]
 
 # Feature-to-dependency wiring per connector
+biorxiv = []
+rss = ["dep:feed-rs"]
+discord = ["dep:serenity"]
+google-scholar = ["dep:scraper"]
 youtube = ["dep:yt-transcript-rs", "dep:rusty_ytdl"]
 reddit = ["dep:roux"]
 hackernews = []
