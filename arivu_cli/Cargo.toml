@@ -62,6 +62,12 @@ slack = ["arivu_core/slack"]
 github = ["arivu_core/github"]
 atlassian = ["arivu_core/atlassian"]
 
+# New connectors
+biorxiv = ["arivu_core/biorxiv"]
+rss = ["arivu_core/rss"]
+discord = ["arivu_core/discord"]
+google-scholar = ["arivu_core/google-scholar"]
+
 # LLM provider web search (pass-through)
 openai-search = ["arivu_core/openai-search"]
 anthropic-search = ["arivu_core/anthropic-search"]

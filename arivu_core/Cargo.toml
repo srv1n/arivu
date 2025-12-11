@@ -85,7 +85,7 @@ all-connectors = [
 
 # Feature-to-dependency wiring per connector
 biorxiv = []
-rss = ["dep:feed-rs"]
+rss = ["dep:feed-rs", "dep:scraper"]
 discord = ["dep:serenity"]
 google-scholar = ["dep:scraper"]
 youtube = ["dep:yt-transcript-rs", "dep:rusty_ytdl"]

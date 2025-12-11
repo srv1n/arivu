@@ -3,6 +3,7 @@ use crate::error::ConnectorError;
 use crate::utils::structured_result_with_text;
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
+use chrono::{Duration, Utc};
 use reqwest::Client;
 use rmcp::model::*;
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,8 @@ pub struct BiorxivPaper {
     pub author_corresponding_institution: String,
     pub date: String,
     pub version: String,
-    pub type_: String,
+    #[serde(rename = "type")]
+    pub type_field: String,
     pub license: String,
     pub category: String,
     pub jatsxml: String,
@@ -39,10 +41,16 @@ struct BiorxivResponse {
 #[derive(Debug, Deserialize)]
 struct BiorxivMessage {
     status: String,
+    #[allow(dead_code)]
     interval: Option<String>,
+    #[allow(dead_code)]
     cursor: Option<Value>, // Can be string or int
-    count: Option<i32>,
-    total: Option<i32>,
+    #[allow(dead_code)]
+    count: Option<Value>, // API returns string or int
+    #[allow(dead_code)]
+    count_new_papers: Option<Value>, // API returns string
+    #[allow(dead_code)]
+    total: Option<Value>, // API returns string or int
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -54,11 +62,14 @@ struct BiorxivPaperRaw {
     pub author_corresponding_institution: String,
     pub date: String,
     pub version: String,
-    pub type_: String,
+    #[serde(rename = "type")]
+    pub paper_type: String,
     pub license: String,
     pub category: String,
     pub jatsxml: String,
-    pub abstract_url: Option<String>,
+    #[serde(rename = "abstract")]
+    pub abstract_text: Option<String>,
+    pub funder: Option<Value>, // Can be string "NA" or object
     pub published: String,
     pub server: String,
 }
@@ -89,7 +100,11 @@ pub struct BiorxivConnector {
 impl BiorxivConnector {
     pub async fn new(_auth: AuthDetails) -> Result<Self, ConnectorError> {
         Ok(Self {
-            client: Client::new(),
+            client: Client::builder()
+                .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+                .http1_only()
+                .build()
+                .map_err(ConnectorError::HttpRequest)?,
         })
     }
 
@@ -132,14 +147,25 @@ impl BiorxivConnector {
         result.insert("authors".to_string(), json!(paper.authors));
         result.insert("date".to_string(), json!(paper.date));
         result.insert("version".to_string(), json!(paper.version));
+        result.insert("type".to_string(), json!(paper.paper_type));
         result.insert("category".to_string(), json!(paper.category));
         result.insert("server".to_string(), json!(paper.server));
 
+        // Add abstract if present
+        if let Some(ref abstract_text) = paper.abstract_text {
+            result.insert("abstract".to_string(), json!(abstract_text));
+        }
+
         // Construct useful URLs
-        let abstract_url = format!("https://www.{}.org/content/{}", paper.server, paper.doi);
+        let abstract_url = format!(
+            "https://www.{}.org/content/{}",
+            paper.server.to_lowercase(),
+            paper.doi
+        );
         let pdf_url = format!(
             "https://www.{}.org/content/{}.full.pdf",
-            paper.server, paper.doi
+            paper.server.to_lowercase(),
+            paper.doi
         );
 
         result.insert("url".to_string(), json!(abstract_url));
@@ -322,10 +348,16 @@ impl Connector for BiorxivConnector {
                 )
                 .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
 
-                let count = args.count.unwrap_or(10);
-                // API format: server/recent/count
-                let path = format!("{}/recent/{}", args.server, count);
-                let papers = self.fetch_from_api(&path).await?;
+                let count = args.count.unwrap_or(10).min(100) as usize;
+                // API requires date range format: server/YYYY-MM-DD/YYYY-MM-DD
+                // Use last 7 days to get recent papers
+                let end_date = Utc::now().format("%Y-%m-%d").to_string();
+                let start_date = (Utc::now() - Duration::days(7))
+                    .format("%Y-%m-%d")
+                    .to_string();
+                let path = format!("{}/{}/{}", args.server, start_date, end_date);
+                let mut papers = self.fetch_from_api(&path).await?;
+                papers.truncate(count);
 
                 let results: Vec<HashMap<String, Value>> =
                     papers.iter().map(|p| self.format_paper(p)).collect();

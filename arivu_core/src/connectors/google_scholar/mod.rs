@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::time::{self, Duration};
 
 #[derive(Debug, Deserialize)]
 struct SearchPapersArgs {
@@ -34,6 +35,7 @@ impl GoogleScholarConnector {
     }
 
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Value>, ConnectorError> {
+        time::sleep(Duration::from_secs(3)).await; // Rate limit Google Scholar
         let url = format!(
             "https://scholar.google.com/scholar?q={}&hl=en",
             urlencoding::encode(query)
@@ -160,8 +162,7 @@ impl Connector for GoogleScholarConnector {
                 website_url: Some("https://scholar.google.com".to_string()),
             },
             instructions: Some(
-                "Search Google Scholar. Note: Scrapes public pages, subject to rate limiting."
-                    .to_string(),
+                "Search Google Scholar by scraping. This method is unofficial, subject to Google's Terms of Service, and may be unreliable due to CAPTCHAs or HTML changes. Use with caution.".to_string(),
             ),
         })
     }

@@ -33,6 +33,13 @@ struct GetServerInfoArgs {
     guild_id: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct SearchMessagesArgs {
+    channel_id: u64,
+    query: String,
+    limit: Option<u64>,
+}
+
 pub struct DiscordConnector {
     http: Option<Arc<Http>>,
     token: Option<String>,
@@ -139,7 +146,7 @@ impl Connector for DiscordConnector {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Access Discord. Requires a Bot Token.".to_string()),
+            instructions: Some("Access Discord. Requires a Bot Token and MESSAGE_CONTENT intent enabled in Discord Developer Portal for reading message content.".to_string()),
         })
     }
 
@@ -217,6 +224,23 @@ impl Connector for DiscordConnector {
                         "content": { "type": "string", "description": "Message content" }
                     },
                     "required": ["channel_id", "content"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("search_messages"),
+                title: None,
+                description: Some(Cow::Borrowed("Search messages in a channel by content")),
+                input_schema: Arc::new(json!({
+                    "type": "object",
+                    "properties": {
+                        "channel_id": { "type": "integer", "description": "ID of the channel" },
+                        "query": { "type": "string", "description": "Text to search for within message content" },
+                        "limit": { "type": "integer", "description": "Number of matching messages (max 100)" }
+                    },
+                    "required": ["channel_id", "query"]
                 }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
@@ -319,7 +343,7 @@ impl Connector for DiscordConnector {
                     .get_messages(
                         ChannelId::new(args.channel_id),
                         None,
-                        Some(args.limit.unwrap_or(50) as u8),
+                        Some(args.limit.unwrap_or(50).min(100) as u8),
                     )
                     .await
                     .map_err(|e| ConnectorError::Other(e.to_string()))?;
@@ -366,6 +390,39 @@ impl Connector for DiscordConnector {
                 Ok(structured_result_with_text(
                     &data,
                     Some(serde_json::to_string(&data)?),
+                )?)
+            }
+            "search_messages" => {
+                let args: SearchMessagesArgs = serde_json::from_value(
+                    serde_json::to_value(request.arguments.unwrap_or_default())
+                        .map_err(ConnectorError::SerdeJson)?,
+                )
+                .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+
+                let limit = args.limit.unwrap_or(50).min(100) as u8;
+                let messages = http
+                    .get_messages(ChannelId::new(args.channel_id), None, Some(limit))
+                    .await
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+
+                let query_lower = args.query.to_lowercase();
+                let filtered_messages: Vec<Value> = messages
+                    .iter()
+                    .filter(|m| m.content.to_lowercase().contains(&query_lower))
+                    .map(|m| {
+                        json!({
+                            "id": m.id.get(),
+                            "author": m.author.name,
+                            "content": m.content,
+                            "timestamp": m.timestamp.to_rfc3339(),
+                        })
+                    })
+                    .collect();
+                Ok(structured_result_with_text(
+                    &json!({"query": args.query, "results": filtered_messages}),
+                    Some(serde_json::to_string(
+                        &json!({"query": args.query, "results": filtered_messages}),
+                    )?),
                 )?)
             }
             _ => Err(ConnectorError::ToolNotFound),
