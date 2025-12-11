@@ -146,28 +146,32 @@ async fn execute_action(cli: &Cli, action: &ResolvedAction) -> Result<()> {
     // Call the tool
     match connector.call_tool(request).await {
         Ok(result) => {
-            // Extract text content from result
-            let text_content: Vec<String> = result
-                .content
-                .iter()
-                .filter_map(|c| {
-                    if let arivu_core::RawContent::Text(t) = &c.raw {
-                        Some(t.text.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            // Prefer structured_content if present (most connectors use this)
+            let output = if let Some(sc) = result.structured_content {
+                OutputData::ToolResult(sc)
+            } else {
+                // Fall back to extracting text content from result.content
+                let text_content: Vec<String> = result
+                    .content
+                    .iter()
+                    .filter_map(|c| {
+                        if let arivu_core::RawContent::Text(t) = &c.raw {
+                            Some(t.text.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-            let combined = text_content.join("\n");
+                let combined = text_content.join("\n");
 
-            // Try to parse as JSON for pretty output
-            let output =
+                // Try to parse as JSON for pretty output
                 if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&combined) {
                     OutputData::ToolResult(json_value)
                 } else {
                     OutputData::ToolResult(json!({ "content": combined }))
-                };
+                }
+            };
 
             format_output(&output, &cli.output)?;
         }

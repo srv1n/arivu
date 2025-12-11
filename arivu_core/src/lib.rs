@@ -207,6 +207,40 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
         }
     }
 
+    #[cfg(feature = "biorxiv")]
+    {
+        if let Ok(connector) =
+            connectors::biorxiv::BiorxivConnector::new(auth::AuthDetails::new()).await
+        {
+            registry.register_provider(Box::new(connector));
+        }
+    }
+
+    #[cfg(feature = "rss")]
+    {
+        if let Ok(connector) = connectors::rss::RssConnector::new(auth::AuthDetails::new()).await {
+            registry.register_provider(Box::new(connector));
+        }
+    }
+
+    #[cfg(feature = "discord")]
+    {
+        if let Ok(connector) =
+            connectors::discord::DiscordConnector::new(auth::AuthDetails::new()).await
+        {
+            registry.register_provider(Box::new(connector));
+        }
+    }
+
+    #[cfg(feature = "google-scholar")]
+    {
+        if let Ok(connector) =
+            connectors::google_scholar::GoogleScholarConnector::new(auth::AuthDetails::new()).await
+        {
+            registry.register_provider(Box::new(connector));
+        }
+    }
+
     #[cfg(feature = "pubmed")]
     {
         if let Ok(connector) = connectors::pubmed::PubMedConnector::new().await {
