@@ -59,6 +59,10 @@ impl Connector for AnthropicWebSearchConnector {
     fn name(&self) -> &'static str {
         "anthropic-search"
     }
+
+    fn credential_provider(&self) -> &'static str {
+        "anthropic"
+    }
     fn description(&self) -> &'static str {
         "Search the web via Claude Web Search tool."
     }

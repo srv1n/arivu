@@ -84,6 +84,10 @@ impl Connector for OpenAIWebSearchConnector {
         "openai-search"
     }
 
+    fn credential_provider(&self) -> &'static str {
+        "openai"
+    }
+
     fn description(&self) -> &'static str {
         "Search the web via OpenAI Responses API built-in web_search tool."
     }

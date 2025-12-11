@@ -1,5 +1,6 @@
 use crate::cli::OutputFormat;
 use crate::commands::{CommandError, Result};
+use arivu_core::resolver::PatternInfo;
 use arivu_core::ServerInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,6 +28,8 @@ pub enum OutputData {
         tool: String,
         result: Value,
     },
+    ToolResult(Value),
+    Patterns(Vec<PatternInfo>),
     ConfigInfo(Value),
     ErrorMessage(String),
 }
@@ -99,6 +102,17 @@ fn format_text_output(data: &OutputData) -> Result<()> {
         OutputData::ErrorMessage(msg) => {
             eprintln!("Error: {}", msg);
         }
+        OutputData::ToolResult(result) => {
+            println!("{}", serde_json::to_string_pretty(result)?);
+        }
+        OutputData::Patterns(patterns) => {
+            for p in patterns {
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    p.connector, p.tool, p.example, p.description
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -167,6 +181,24 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
         OutputData::ErrorMessage(msg) => {
             println!("# Error\n");
             println!("{}\n", msg);
+        }
+        OutputData::ToolResult(result) => {
+            println!("# Result\n");
+            println!("```json");
+            println!("{}", serde_json::to_string_pretty(result)?);
+            println!("```\n");
+        }
+        OutputData::Patterns(patterns) => {
+            println!("# Supported Patterns\n");
+            println!("| Connector | Tool | Example | Description |");
+            println!("|-----------|------|---------|-------------|");
+            for p in patterns {
+                println!(
+                    "| {} | {} | `{}` | {} |",
+                    p.connector, p.tool, p.example, p.description
+                );
+            }
+            println!();
         }
     }
     Ok(())

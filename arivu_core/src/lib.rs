@@ -10,6 +10,7 @@ pub mod mcp_server;
 pub mod oauth;
 pub mod oauth_client;
 pub mod prompts;
+pub mod resolver;
 pub mod resources;
 pub mod tools;
 pub mod transport;
@@ -42,6 +43,19 @@ pub trait Connector: Send + Sync {
 
     /// Returns a description of the connector.
     fn description(&self) -> &'static str;
+
+    /// Returns the canonical provider name for credential lookup.
+    ///
+    /// This is the key used to look up credentials in the auth store.
+    /// Defaults to the connector name. Override for connectors that share
+    /// credentials with other systems (e.g., LLM providers).
+    ///
+    /// # Example
+    /// - `openai-search` connector returns `"openai"` to share credentials with OpenAI LLM
+    /// - `slack` connector returns `"slack"` (same as name, uses default)
+    fn credential_provider(&self) -> &'static str {
+        self.name()
+    }
 
     /// Returns the MCP capabilities of this connector.
     async fn capabilities(&self) -> ServerCapabilities; // Use MCP's ServerCapabilities

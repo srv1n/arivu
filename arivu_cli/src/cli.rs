@@ -110,6 +110,37 @@ pub enum Commands {
         id: String,
     },
 
+    /// Fetch content by automatically detecting the URL or ID type
+    ///
+    /// Paste any supported URL or ID and Arivu will route it to the right connector.
+    #[command(alias = "f")]
+    #[command(after_help = "\x1b[1;33mSupported Inputs:\x1b[0m
+  YouTube:       https://youtube.com/watch?v=xxx, youtu.be/xxx, video ID
+  Hacker News:   https://news.ycombinator.com/item?id=xxx, hn:12345678
+  ArXiv:         https://arxiv.org/abs/xxx, arXiv:2301.07041
+  PubMed:        https://pubmed.ncbi.nlm.nih.gov/xxx, PMID:12345678
+  GitHub:        https://github.com/owner/repo, owner/repo
+  Reddit:        https://reddit.com/r/xxx, r/rust
+  X/Twitter:     https://x.com/user/status/xxx, @username
+  Wikipedia:     https://en.wikipedia.org/wiki/xxx
+  DOI:           https://doi.org/10.xxx, 10.1234/example
+  Any URL:       Falls back to web scraper
+
+\x1b[1;33mExamples:\x1b[0m
+  arivu fetch https://www.youtube.com/watch?v=dQw4w9WgXcQ
+  arivu fetch arXiv:2301.07041
+  arivu fetch PMID:12345678
+  arivu fetch rust-lang/rust
+  arivu fetch r/rust")]
+    Fetch {
+        /// URL or ID to fetch (auto-detected)
+        input: String,
+    },
+
+    /// Show all supported URL/ID patterns for auto-detection
+    #[command(alias = "patterns")]
+    Formats,
+
     /// Manage configuration and authentication
     ///
     /// Set, view, test, or remove authentication credentials for connectors.

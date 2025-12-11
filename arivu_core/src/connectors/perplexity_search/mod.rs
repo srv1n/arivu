@@ -45,6 +45,11 @@ impl Connector for PerplexitySearchConnector {
     fn name(&self) -> &'static str {
         "perplexity-search"
     }
+
+    fn credential_provider(&self) -> &'static str {
+        "perplexity"
+    }
+
     fn description(&self) -> &'static str {
         "Search the web using Perplexity's Search API (online browsing)."
     }

@@ -25,6 +25,7 @@ comfy-table = { version = "7.2.1", default-features = false }
 terminal_size = "0.4"
 textwrap = { version = "0.16", default-features = false, features = ["smawk"] }
 serde_yaml = "0.9.34"
+rpassword = "7.3"
 
 # Async runtime - only features needed for CLI
 tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time"] }

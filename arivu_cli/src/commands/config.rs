@@ -1,13 +1,10 @@
 use crate::cli::{Cli, ConfigAction};
 use crate::commands::{CommandError, Result};
 use crate::output::{format_output, OutputData};
-use arivu_core::{
-    auth::AuthDetails,
-    auth_store::{AuthStore, FileAuthStore},
-};
+use arivu_core::auth_store::{AuthStore, FileAuthStore};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::io::{self, Write};
 
 pub async fn run(cli: &Cli, action: ConfigAction) -> Result<()> {
     match action {
@@ -33,51 +30,71 @@ pub async fn run(cli: &Cli, action: ConfigAction) -> Result<()> {
 }
 
 async fn show_config(cli: &Cli) -> Result<()> {
-    let config = get_current_config()?;
+    let store = FileAuthStore::new_default();
+    let providers = store.list_providers();
 
-    let output_data = OutputData::ConfigInfo(config.clone());
+    let output_data = OutputData::ConfigInfo(get_config_json(&store, &providers));
 
     match cli.output {
         crate::cli::OutputFormat::Pretty => {
-            println!("{}", "Current Configuration".bold().cyan());
+            println!();
+            println!("{}", "Configured Connectors".bold().cyan());
+            println!("{}", "=====================".cyan());
             println!();
 
-            if config
-                .as_object()
-                .expect("Config JSON must be an object")
-                .is_empty()
-            {
-                println!("{}", "No configuration found".yellow());
+            if providers.is_empty() {
+                println!("{}", "No connectors configured yet.".yellow());
+                println!();
+                println!("Run {} to set up a connector.", "arivu setup".cyan());
+            } else {
+                println!("Config file: {}", store.config_path().dimmed());
+                println!();
+
+                for provider in &providers {
+                    let auth = store.load(provider);
+                    let field_count = auth.as_ref().map(|a| a.len()).unwrap_or(0);
+
+                    // Check if it has meaningful auth (not just browser selection)
+                    let has_token = auth
+                        .as_ref()
+                        .map(|a| {
+                            a.contains_key("token")
+                                || a.contains_key("api_key")
+                                || a.contains_key("access_token")
+                                || a.contains_key("client_id")
+                        })
+                        .unwrap_or(false);
+
+                    let status = if has_token {
+                        "configured".green().to_string()
+                    } else if auth
+                        .as_ref()
+                        .map(|a| a.contains_key("browser"))
+                        .unwrap_or(false)
+                    {
+                        "browser cookies".blue().to_string()
+                    } else {
+                        "partial".yellow().to_string()
+                    };
+
+                    println!(
+                        "  {} - {} ({} fields)",
+                        provider.cyan().bold(),
+                        status,
+                        field_count
+                    );
+                }
                 println!();
                 println!(
-                    "{} Use {} to configure authentication for connectors",
-                    "Tip:".green().bold(),
-                    "arivu config set <connector>".cyan()
+                    "Test a connector: {}",
+                    "arivu config test <connector>".cyan()
                 );
-            } else {
-                for (connector, settings) in
-                    config.as_object().expect("Config JSON must be an object")
-                {
-                    println!("{} {}", "Connector:".bold(), connector.cyan());
-                    if let Some(auth_status) = settings.get("auth_status") {
-                        let status = auth_status.as_str().unwrap_or("unknown");
-                        let status_display = match status {
-                            "configured" => "✓ Configured".green().to_string(),
-                            "missing" => "✗ Not configured".red().to_string(),
-                            _ => status.yellow().to_string(),
-                        };
-                        println!("  {}: {}", "Status".bold(), status_display);
-                    }
-                    if let Some(auth_type) = settings.get("auth_type") {
-                        println!(
-                            "  {}: {}",
-                            "Auth Type".bold(),
-                            auth_type.as_str().unwrap_or("unknown")
-                        );
-                    }
-                    println!();
-                }
+                println!(
+                    "Remove a connector: {}",
+                    "arivu config remove <connector>".cyan()
+                );
             }
+            println!();
         }
         _ => {
             format_output(&output_data, &cli.output)?;
@@ -87,6 +104,26 @@ async fn show_config(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+fn get_config_json(store: &FileAuthStore, providers: &[String]) -> Value {
+    let mut config = json!({});
+
+    for provider in providers {
+        if let Some(auth) = store.load(provider) {
+            let mut provider_config = json!({});
+
+            // Show field names but mask values
+            for key in auth.keys() {
+                provider_config[key] = json!("***");
+            }
+
+            provider_config["field_count"] = json!(auth.len());
+            config[provider] = provider_config;
+        }
+    }
+
+    config
+}
+
 async fn set_config(
     _cli: &Cli,
     connector: &str,
@@ -94,108 +131,163 @@ async fn set_config(
     value: Option<&str>,
     browser: Option<&str>,
 ) -> Result<()> {
-    println!(
-        "{} configuration for {}",
-        "Setting".bold().cyan(),
-        connector.yellow()
-    );
-
     // Validate connector exists
     let registry = crate::commands::list::create_registry().await?;
     if registry.get_provider(connector).is_none() {
         return Err(CommandError::ConnectorNotFound(connector.to_string()));
     }
 
-    // Special-case Slack: allow setting token directly into the core FileAuthStore
-    if connector == "slack" {
-        if let Some(token) = value {
-            let mut auth: AuthDetails = HashMap::new();
-            auth.insert("token".to_string(), token.to_string());
-            let store = FileAuthStore::new_default();
+    let store = FileAuthStore::new_default();
+
+    // Handle different auth methods
+    match (auth_type, value, browser) {
+        // API key with explicit type
+        (Some("api-key"), Some(key), _) | (Some("token"), Some(key), _) => {
+            let mut auth = store.load(connector).unwrap_or_default();
+            auth.insert("token".to_string(), key.to_string());
             store
-                .save("slack", &auth)
-                .map_err(|e| CommandError::InvalidConfig(format!("failed to save token: {}", e)))?;
+                .save(connector, &auth)
+                .map_err(|e| CommandError::InvalidConfig(format!("Failed to save: {}", e)))?;
             println!(
-                "{} Stored Slack token locally for {}",
-                "✓".green().bold(),
+                "{} API key saved for {}",
+                "Success!".green().bold(),
                 connector.cyan()
             );
-            println!("Scopes expected: conversations:read, users:read, channels:history, groups:history, im:history, mpim:history, files:read, search:read");
-            return Ok(());
         }
-    }
-
-    // Determine auth method (generic fallback)
-    let auth_method = match (auth_type, value, browser) {
-        (Some("api-key"), Some(key), _) => {
-            store_api_key(connector, key)?;
-            "API Key"
-        }
-        (Some("browser"), _, Some(browser_name)) => {
-            configure_browser_auth(connector, browser_name)?;
-            "Browser Cookies"
-        }
-        (Some("oauth"), _, _) => {
-            configure_oauth(connector)?;
-            "OAuth2"
-        }
-        (None, Some(value), None) => {
-            // Guess the auth type based on value format
-            if value.starts_with("sk-") || value.len() > 20 {
-                store_api_key(connector, value)?;
-                "API Key"
-            } else {
-                return Err(CommandError::InvalidConfig(
-                    "Could not determine authentication type. Use --auth-type".to_string(),
-                ));
+        // Browser cookies
+        (Some("browser"), _, Some(browser_name)) | (None, None, Some(browser_name)) => {
+            let supported = ["chrome", "firefox", "safari", "brave"];
+            if !supported.contains(&browser_name) {
+                return Err(CommandError::InvalidConfig(format!(
+                    "Unsupported browser: {}. Use: {}",
+                    browser_name,
+                    supported.join(", ")
+                )));
             }
+            let mut auth = store.load(connector).unwrap_or_default();
+            auth.insert("browser".to_string(), browser_name.to_string());
+            store
+                .save(connector, &auth)
+                .map_err(|e| CommandError::InvalidConfig(format!("Failed to save: {}", e)))?;
+            println!(
+                "{} Browser set to {} for {}",
+                "Success!".green().bold(),
+                browser_name.cyan(),
+                connector.cyan()
+            );
         }
-        (None, None, Some(browser_name)) => {
-            configure_browser_auth(connector, browser_name)?;
-            "Browser Cookies"
+        // Value without explicit type - try to guess
+        (None, Some(value), None) => {
+            let mut auth = store.load(connector).unwrap_or_default();
+            // Use common field names based on value format
+            let field_name = if value.starts_with("xoxb-")
+                || value.starts_with("ghp_")
+                || value.starts_with("github_pat_")
+            {
+                "token"
+            } else if value.starts_with("sk-ant-")
+                || value.starts_with("sk-")
+                || value.starts_with("pplx-")
+                || value.starts_with("tvly-")
+            {
+                "api_key"
+            } else {
+                "token" // default
+            };
+            auth.insert(field_name.to_string(), value.to_string());
+            store
+                .save(connector, &auth)
+                .map_err(|e| CommandError::InvalidConfig(format!("Failed to save: {}", e)))?;
+            println!(
+                "{} Credential saved for {}",
+                "Success!".green().bold(),
+                connector.cyan()
+            );
+        }
+        // OAuth placeholder
+        (Some("oauth"), _, _) => {
+            println!(
+                "{} Use {} for OAuth setup",
+                "Note:".yellow().bold(),
+                format!("arivu setup {}", connector).cyan()
+            );
         }
         _ => {
             return Err(CommandError::InvalidConfig(
-                "Invalid configuration. Specify --auth-type with --value or --browser".to_string(),
+                "Specify --value <token> or --browser <browser>".to_string(),
             ));
         }
-    };
+    }
 
+    // Suggest testing
+    println!();
     println!(
-        "{} {} authentication for {}",
-        "✓".green().bold(),
-        "Configured".green(),
-        connector.cyan()
+        "Test with: {}",
+        format!("arivu config test {}", connector).cyan()
     );
-    println!("  {}: {}", "Method".bold(), auth_method);
 
     Ok(())
 }
 
 async fn remove_config(_cli: &Cli, connector: &str) -> Result<()> {
-    // Remove environment variables or config file entries
-    println!(
-        "{} configuration for {}",
-        "Removing".bold().red(),
-        connector.yellow()
-    );
+    let store = FileAuthStore::new_default();
 
-    // TODO: Implement actual removal logic
-    println!(
-        "{} Configuration removed for {}",
-        "✓".green().bold(),
-        connector.cyan()
+    // Check if connector has config
+    if store.load(connector).is_none() {
+        println!(
+            "{} No configuration found for {}",
+            "Note:".yellow().bold(),
+            connector.cyan()
+        );
+        return Ok(());
+    }
+
+    // Confirm removal
+    print!(
+        "Remove all credentials for {}? [y/N] ",
+        connector.cyan().bold()
     );
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    if input.trim().to_lowercase() != "y" {
+        println!("Cancelled.");
+        return Ok(());
+    }
+
+    // Remove
+    match store.remove(connector) {
+        Ok(true) => {
+            println!(
+                "{} Removed configuration for {}",
+                "Success!".green().bold(),
+                connector.cyan()
+            );
+        }
+        Ok(false) => {
+            println!(
+                "{} No configuration found for {}",
+                "Note:".yellow().bold(),
+                connector.cyan()
+            );
+        }
+        Err(e) => {
+            return Err(CommandError::InvalidConfig(format!(
+                "Failed to remove: {}",
+                e
+            )));
+        }
+    }
 
     Ok(())
 }
 
 async fn test_config(_cli: &Cli, connector: &str) -> Result<()> {
-    println!(
-        "{} authentication for {}",
-        "Testing".bold().cyan(),
-        connector.yellow()
-    );
+    println!();
+    print!("{} {} ... ", "Testing".bold().cyan(), connector.cyan());
+    io::stdout().flush()?;
 
     let registry = crate::commands::list::create_registry().await?;
     let provider = registry
@@ -205,102 +297,31 @@ async fn test_config(_cli: &Cli, connector: &str) -> Result<()> {
     let c = provider.lock().await;
     match c.test_auth().await {
         Ok(_) => {
+            println!("{}", "Success!".green().bold());
+            println!();
+            println!("{}", "Authentication is working. Try:".bold());
             println!(
-                "{} Authentication successful for {}",
-                "✓".green().bold(),
-                connector.cyan()
+                "  {}",
+                format!("arivu search {} \"test\"", connector).cyan()
             );
         }
         Err(e) => {
+            println!("{}", "Failed".red().bold());
+            println!();
+            println!("{} {}", "Error:".red().bold(), e.to_string().red());
+            println!();
+            println!("You can:");
             println!(
-                "{} Authentication failed for {}: {}",
-                "✗".red().bold(),
-                connector.cyan(),
-                e.to_string().red()
+                "  - Re-configure with {}",
+                format!("arivu setup {}", connector).cyan()
+            );
+            println!(
+                "  - Check credentials in {}",
+                FileAuthStore::new_default().config_path().dimmed()
             );
         }
     }
-
-    Ok(())
-}
-
-fn get_current_config() -> Result<Value> {
-    let mut config = json!({});
-
-    // Check environment variables for common connectors
-    let connectors = vec![
-        ("reddit", vec!["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"]),
-        ("x", vec!["X_USERNAME", "X_PASSWORD"]),
-    ];
-
-    for (connector, env_vars) in connectors {
-        let mut connector_config = json!({});
-        let mut has_config = false;
-
-        for env_var in env_vars {
-            if std::env::var(env_var).is_ok() {
-                has_config = true;
-                connector_config[env_var.to_lowercase()] = json!("***");
-            }
-        }
-
-        if has_config {
-            connector_config["auth_status"] = json!("configured");
-            connector_config["auth_type"] = json!("environment");
-        } else {
-            connector_config["auth_status"] = json!("missing");
-        }
-
-        config[connector] = connector_config;
-    }
-
-    Ok(config)
-}
-
-fn store_api_key(connector: &str, key: &str) -> Result<()> {
-    // In a real implementation, this would store to a secure config file
-    // For now, just suggest setting environment variables
-    let env_var = match connector {
-        "reddit" => "REDDIT_CLIENT_ID", // Would need both ID and secret
-        _ => {
-            return Err(CommandError::InvalidConfig(format!(
-                "Unknown connector: {}",
-                connector
-            )))
-        }
-    };
-
-    println!("{} Set environment variable:", "Note:".yellow().bold());
-    println!("  export {}=\"{}\"", env_var, key);
-
-    Ok(())
-}
-
-fn configure_browser_auth(_connector: &str, browser: &str) -> Result<()> {
-    let supported_browsers = ["chrome", "firefox", "safari", "brave"];
-    if !supported_browsers.contains(&browser) {
-        return Err(CommandError::InvalidConfig(format!(
-            "Unsupported browser: {}. Supported: {}",
-            browser,
-            supported_browsers.join(", ")
-        )));
-    }
-
-    println!(
-        "{} Browser authentication will extract cookies from {}",
-        "Note:".yellow().bold(),
-        browser.cyan()
-    );
-
-    Ok(())
-}
-
-fn configure_oauth(connector: &str) -> Result<()> {
-    println!(
-        "{} OAuth2 configuration not yet implemented for {}",
-        "Note:".yellow().bold(),
-        connector.cyan()
-    );
+    println!();
 
     Ok(())
 }
