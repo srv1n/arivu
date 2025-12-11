@@ -118,6 +118,132 @@ impl Tools {
             connectors.insert("macos".to_string(), Arc::new(Mutex::new(Box::new(c))));
         }
 
+        // LLM provider web search connectors
+        #[cfg(feature = "openai-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::openai_search::OpenAIWebSearchConnector::new(AuthDetails::new())
+                    .await
+            {
+                connectors.insert(
+                    "openai-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "anthropic-search")]
+        {
+            if let Ok(c) = crate::connectors::anthropic_search::AnthropicWebSearchConnector::new(
+                AuthDetails::new(),
+            )
+            .await
+            {
+                connectors.insert(
+                    "anthropic-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "gemini-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::gemini_search::GeminiSearchConnector::new(AuthDetails::new())
+                    .await
+            {
+                connectors.insert(
+                    "gemini-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "perplexity-search")]
+        {
+            if let Ok(c) = crate::connectors::perplexity_search::PerplexitySearchConnector::new(
+                AuthDetails::new(),
+            )
+            .await
+            {
+                connectors.insert(
+                    "perplexity-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "xai-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::xai_search::XaiSearchConnector::new(AuthDetails::new()).await
+            {
+                connectors.insert("xai-search".to_string(), Arc::new(Mutex::new(Box::new(c))));
+            }
+        }
+
+        #[cfg(feature = "exa-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::exa_search::ExaSearchConnector::new(AuthDetails::new()).await
+            {
+                connectors.insert("exa-search".to_string(), Arc::new(Mutex::new(Box::new(c))));
+            }
+        }
+
+        #[cfg(feature = "firecrawl-search")]
+        {
+            if let Ok(c) = crate::connectors::firecrawl_search::FirecrawlSearchConnector::new(
+                AuthDetails::new(),
+            )
+            .await
+            {
+                connectors.insert(
+                    "firecrawl-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "serper-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::serper_search::SerperSearchConnector::new(AuthDetails::new())
+                    .await
+            {
+                connectors.insert(
+                    "serper-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "tavily-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::tavily_search::TavilySearchConnector::new(AuthDetails::new())
+                    .await
+            {
+                connectors.insert(
+                    "tavily-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
+        #[cfg(feature = "serpapi-search")]
+        {
+            if let Ok(c) =
+                crate::connectors::serpapi_search::SerpapiSearchConnector::new(AuthDetails::new())
+                    .await
+            {
+                connectors.insert(
+                    "serpapi-search".to_string(),
+                    Arc::new(Mutex::new(Box::new(c))),
+                );
+            }
+        }
+
         Tools {
             connectors,
             store: None,

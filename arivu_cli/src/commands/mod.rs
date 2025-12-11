@@ -1,6 +1,7 @@
 pub mod call;
 pub mod config;
 pub mod connectors;
+pub mod fetch;
 pub mod get;
 pub mod list;
 pub mod search;
@@ -23,6 +24,9 @@ pub enum CommandError {
 
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+
+    #[error("Tool error: {0}")]
+    ToolError(String),
 
     #[error("Core library error: {0}")]
     Core(#[from] arivu_core::error::ConnectorError),

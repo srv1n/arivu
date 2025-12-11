@@ -56,10 +56,30 @@ impl FileAuthStore {
         let base = dirs::config_dir()
             .or_else(|| dirs::home_dir().map(|p| p.join(".config")))
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let dir = base.join("rzn_datasourcer");
+        let dir = base.join("arivu");
         let path = dir.join("auth.json");
         std::fs::create_dir_all(&dir).ok();
         Self { path }
+    }
+
+    /// Returns the path to the auth config file
+    pub fn config_path(&self) -> String {
+        self.path.display().to_string()
+    }
+
+    /// Remove credentials for a specific provider
+    pub fn remove(&self, provider: &str) -> Result<bool, StoreError> {
+        let mut map = self.read_map();
+        let existed = map.remove(provider).is_some();
+        if existed {
+            self.write_map(&map)?;
+        }
+        Ok(existed)
+    }
+
+    /// List all configured providers
+    pub fn list_providers(&self) -> Vec<String> {
+        self.read_map().keys().cloned().collect()
     }
 
     fn read_map(&self) -> std::collections::HashMap<String, AuthDetails> {

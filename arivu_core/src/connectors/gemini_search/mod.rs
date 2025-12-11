@@ -45,6 +45,11 @@ impl Connector for GeminiSearchConnector {
     fn name(&self) -> &'static str {
         "gemini-search"
     }
+
+    fn credential_provider(&self) -> &'static str {
+        "gemini"
+    }
+
     fn description(&self) -> &'static str {
         "Search the web using Gemini's Google Search grounding."
     }

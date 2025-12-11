@@ -45,6 +45,11 @@ impl Connector for XaiSearchConnector {
     fn name(&self) -> &'static str {
         "xai-search"
     }
+
+    fn credential_provider(&self) -> &'static str {
+        "xai"
+    }
+
     fn description(&self) -> &'static str {
         "Search the web and X (Twitter) via xAI Grok with live search and citations."
     }
