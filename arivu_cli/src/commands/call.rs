@@ -1,5 +1,5 @@
 use crate::cli::Cli;
-use crate::commands::{CommandError, Result};
+use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, OutputData};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam};
 use owo_colors::OwoColorize;
@@ -155,10 +155,16 @@ pub async fn run(
             let data = OutputData::CallResult {
                 connector: connector.to_string(),
                 tool: tool.to_string(),
-                result: payload,
+                result: payload.clone(),
             };
             format_output(&data, &cli.output)?;
         }
+    }
+
+    // Copy to clipboard if requested
+    if cli.copy {
+        let text = serde_json::to_string_pretty(&payload)?;
+        copy_to_clipboard(&text)?;
     }
 
     Ok(())

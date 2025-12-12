@@ -8,6 +8,7 @@ pub mod search;
 pub mod setup;
 pub mod tools;
 
+use owo_colors::OwoColorize;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -39,6 +40,29 @@ pub enum CommandError {
 
     #[error("YAML serialization error: {0}")]
     Yaml(#[from] serde_yaml::Error),
+
+    #[error("Clipboard error: {0}")]
+    Clipboard(String),
 }
 
 pub type Result<T> = std::result::Result<T, CommandError>;
+
+/// Copy text to the system clipboard and display a confirmation message
+pub fn copy_to_clipboard(text: &str) -> Result<()> {
+    use arboard::Clipboard;
+
+    let mut clipboard = Clipboard::new()
+        .map_err(|e| CommandError::Clipboard(format!("Failed to access clipboard: {}", e)))?;
+
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|e| CommandError::Clipboard(format!("Failed to copy to clipboard: {}", e)))?;
+
+    eprintln!(
+        "{} Output copied to clipboard ({} chars)",
+        "✓".green().bold(),
+        text.len()
+    );
+
+    Ok(())
+}

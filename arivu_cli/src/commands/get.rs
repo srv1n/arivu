@@ -1,5 +1,5 @@
 use crate::cli::Cli;
-use crate::commands::{CommandError, Result};
+use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, OutputData};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam, ProviderRegistry};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -80,6 +80,12 @@ pub async fn run(cli: &Cli, connector_name: &str, id: &str) -> Result<()> {
         _ => {
             format_output(&output_data, &cli.output)?;
         }
+    }
+
+    // Copy to clipboard if requested
+    if cli.copy {
+        let text = serde_json::to_string_pretty(&data)?;
+        copy_to_clipboard(&text)?;
     }
 
     Ok(())

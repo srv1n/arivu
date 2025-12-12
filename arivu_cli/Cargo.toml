@@ -23,6 +23,7 @@ owo-colors = { version = "4.2.3", default-features = false }
 indicatif = { version = "0.17.11", default-features = false }
 comfy-table = { version = "7.2.1", default-features = false }
 terminal_size = "0.4"
+arboard = { version = "3.4", default-features = false }
 textwrap = { version = "0.16", default-features = false, features = ["smawk"] }
 serde_yaml = "0.9.34"
 rpassword = "7.3"

@@ -51,6 +51,10 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    /// Copy output to clipboard
+    #[arg(short, long, global = true)]
+    pub copy: bool,
 }
 
 #[derive(Subcommand)]
