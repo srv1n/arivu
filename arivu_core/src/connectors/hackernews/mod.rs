@@ -274,6 +274,100 @@ fn comment_item_to_payload(
     Value::Object(map)
 }
 
+/// Response format - concise is now the default for token efficiency
+/// Constants for concise response format
+const CONCISE_STORY_FIELDS: &[&str] = &["id", "title", "text"];
+const CONCISE_COMMENT_FIELDS: &[&str] = &["text"];
+
+/// Get field sets based on response_format
+fn get_field_sets_for_format(
+    args: &serde_json::Map<String, Value>,
+    response_format: &str,
+) -> (HashSet<String>, HashSet<String>) {
+    if response_format == "concise" {
+        (
+            CONCISE_STORY_FIELDS.iter().map(|s| s.to_string()).collect(),
+            CONCISE_COMMENT_FIELDS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        )
+    } else {
+        parse_field_sets(args)
+    }
+}
+
+/// Create concise story payload (minimal fields for token efficiency)
+fn story_item_to_concise_payload(item: &HackerNewsItem) -> Value {
+    let mut map = serde_json::Map::new();
+
+    if let Some(id) = item.id {
+        map.insert("id".to_string(), json!(id));
+    }
+    map.insert(
+        "title".to_string(),
+        json!(item.title.clone().unwrap_or_default()),
+    );
+    map.insert(
+        "text".to_string(),
+        json!(item.text.clone().unwrap_or_default()),
+    );
+
+    // Include comments but in concise form
+    let comments = item
+        .children
+        .as_ref()
+        .map(|children| {
+            children
+                .iter()
+                .filter(|child| matches!(child.r#type, Some(ItemType::Comment)))
+                .map(comment_item_to_concise_payload)
+                .collect::<Vec<Value>>()
+        })
+        .unwrap_or_default();
+
+    map.insert("comments".to_string(), Value::Array(comments));
+    Value::Object(map)
+}
+
+/// Create concise comment payload
+fn comment_item_to_concise_payload(item: &HackerNewsItem) -> Value {
+    let mut map = serde_json::Map::new();
+
+    map.insert(
+        "text".to_string(),
+        json!(item.text.clone().unwrap_or_default()),
+    );
+
+    let replies = item
+        .children
+        .as_ref()
+        .map(|children| {
+            children
+                .iter()
+                .filter(|child| matches!(child.r#type, Some(ItemType::Comment)))
+                .map(comment_item_to_concise_payload)
+                .collect::<Vec<Value>>()
+        })
+        .unwrap_or_default();
+
+    map.insert("comments".to_string(), Value::Array(replies));
+    Value::Object(map)
+}
+
+/// Flatten comments into concise format
+fn flatten_comments_concise(item: &HackerNewsItem, out: &mut Vec<Value>) {
+    if let Some(children) = &item.children {
+        for child in children {
+            if !matches!(child.r#type, Some(ItemType::Comment)) {
+                continue;
+            }
+            out.push(json!({ "text": child.text.clone().unwrap_or_default() }));
+            flatten_comments_concise(child, out);
+        }
+    }
+}
+
 fn story_as_comment_payload(item: &HackerNewsItem, comment_fields: &HashSet<String>) -> Value {
     let mut map = serde_json::Map::new();
 
@@ -902,147 +996,34 @@ impl Connector for HackerNewsConnector {
                 icons: None,
             },
             Tool {
-                name: Cow::Borrowed("get_top_stories"),
+                name: Cow::Borrowed("get_stories"),
                 title: None,
-                description: Some(Cow::Borrowed("Get top Hacker News stories")),
+                description: Some(Cow::Borrowed("Get Hacker News stories by type. Use 'type' to select: top (front page), new (latest), best (highest points), ask (Ask HN), show (Show HN), or job (job postings).")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
+                        "story_type": {
+                            "type": "string",
+                            "enum": ["top", "new", "best", "ask", "show", "job"],
+                            "description": "Type of stories to fetch: 'top' (front page), 'new' (latest), 'best' (highest points), 'ask' (Ask HN), 'show' (Show HN), 'job' (job postings)",
+                            "default": "top"
+                        },
+                        "limit": { "type": "integer", "description": "Maximum number of stories to return (default: 10)", "default": 10 },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' (default) returns only title/text/id, 'detailed' includes all metadata (author, points, timestamps, etc.)",
+                            "default": "concise"
+                        },
                         "storyFields": {
                             "type": ["array", "string"],
                             "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
+                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']. Only used when response_format is 'detailed'."
                         },
                         "commentFields": {
                             "type": ["array", "string"],
                             "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
-                        }
-                    },
-                    "required": []
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_new_stories"),
-                title: None,
-                description: Some(Cow::Borrowed("Get new Hacker News stories")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
-                        "storyFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
-                        },
-                        "commentFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
-                        }
-                    },
-                    "required": []
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_best_stories"),
-                title: None,
-                description: Some(Cow::Borrowed("Get best Hacker News stories (sorted by points)")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
-                        "storyFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
-                        },
-                        "commentFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
-                        }
-                    },
-                    "required": []
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_ask_stories"),
-                title: None,
-                description: Some(Cow::Borrowed("Get Ask HN stories")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
-                        "storyFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
-                        },
-                        "commentFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
-                        }
-                    },
-                    "required": []
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_show_stories"),
-                title: None,
-                description: Some(Cow::Borrowed("Get Show HN stories")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
-                        "storyFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
-                        },
-                        "commentFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
-                        }
-                    },
-                    "required": []
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_job_stories"),
-                title: None,
-                description: Some(Cow::Borrowed("Get job stories from Hacker News")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "limit": { "type": "integer", "description": "Maximum number of stories", "default": 10 },
-                        "storyFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
-                        },
-                        "commentFields": {
-                            "type": ["array", "string"],
-                            "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
+                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']. Only used when response_format is 'detailed'."
                         }
                     },
                     "required": []
@@ -1054,25 +1035,31 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("get_post"),
                 title: None,
-                description: Some(Cow::Borrowed("Get Hacker News post details with nested comments by id")),
+                description: Some(Cow::Borrowed("Get a Hacker News story or comment by ID. Returns the item's title, text, author, and full comment tree. Use 'flatten' to get comments as a flat list instead of nested.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
-                        "id": { "type": "integer", "description": "The Hacker News item id" },
+                        "id": { "type": "integer", "description": "The Hacker News item ID (e.g., 12345678) - numeric ID from the URL news.ycombinator.com/item?id=12345678" },
                         "flatten": {
                             "type": "boolean",
-                            "description": "Flatten the results into a single array",
+                            "description": "Return comments as a flat array instead of nested tree structure",
                             "default": false
+                        },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' (default) returns only title/text/comments, 'detailed' includes all metadata (author, points, timestamps, etc.)",
+                            "default": "concise"
                         },
                         "storyFields": {
                             "type": ["array", "string"],
                             "items": { "type": "string" },
-                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']"
+                            "description": "Optional list of additional story fields to include. Prefix with '-' to remove defaults. Defaults: ['title','text']. Only used when response_format is 'detailed'."
                         },
                         "commentFields": {
                             "type": ["array", "string"],
                             "items": { "type": "string" },
-                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']"
+                            "description": "Optional list of additional comment fields to include. Prefix with '-' to remove defaults. Defaults: ['text']. Only used when response_format is 'detailed'."
                         }
                     },
                     "required": ["id"]
@@ -1213,140 +1200,47 @@ impl Connector for HackerNewsConnector {
                 let text = serde_json::to_string(&result)?;
                 Ok(structured_result_with_text(&result, Some(text))?)
             }
-            "get_top_stories" => {
+            // Consolidated get_stories tool - handles all story types
+            "get_stories" => {
+                let story_type = args
+                    .get("story_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("top");
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
+                let response_format = args
+                    .get("response_format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("concise");
 
-                // Get the list of top story IDs
-                let story_ids = self.get_top_stories_list().await?;
+                // Get story IDs based on type
+                let story_ids = match story_type {
+                    "top" => self.get_top_stories_list().await?,
+                    "new" => self.get_new_stories_list().await?,
+                    "best" => self.get_best_stories_list().await?,
+                    "ask" => self.get_ask_stories_list().await?,
+                    "show" => self.get_show_stories_list().await?,
+                    "job" => self.get_job_stories_list().await?,
+                    _ => {
+                        return Err(ConnectorError::InvalidParams(format!(
+                            "Invalid story_type '{}'. Valid types: top, new, best, ask, show, job",
+                            story_type
+                        )));
+                    }
+                };
 
                 // Fetch details for each story up to the limit
                 let mut stories = Vec::new();
                 for item in story_ids.iter().take(limit) {
-                    match item.id {
-                        Some(id) => {
-                            let story = self.get_item(id).await?;
-                            stories.push(story_item_to_payload(
-                                &story,
-                                &story_fields,
-                                &comment_fields,
-                            ));
-                        }
-                        None => {
-                            tracing::debug!("Skipping Hacker News item without ID");
-                        }
-                    }
-                }
-
-                let text = serde_json::to_string(&stories)?;
-                Ok(structured_result_with_text(&stories, Some(text))?)
-            }
-            "get_new_stories" => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
-
-                // Get the list of new story IDs
-                let story_ids = self.get_new_stories_list().await?;
-
-                // Fetch details for each story up to the limit
-                let mut stories = Vec::new();
-                for item in story_ids.iter().take(limit) {
-                    match item.id {
-                        Some(id) => {
-                            let story = self.get_item(id).await?;
-                            stories.push(story_item_to_payload(
-                                &story,
-                                &story_fields,
-                                &comment_fields,
-                            ));
-                        }
-                        None => {
-                            tracing::debug!("Skipping Hacker News item without ID");
-                        }
-                    }
-                }
-
-                let text = serde_json::to_string(&stories)?;
-                Ok(structured_result_with_text(&stories, Some(text))?)
-            }
-            "get_best_stories" => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
-
-                let story_ids = self.get_best_stories_list().await?;
-
-                let mut stories = Vec::new();
-                for item in story_ids.iter().take(limit) {
                     if let Some(id) = item.id {
                         let story = self.get_item(id).await?;
-                        stories.push(story_item_to_payload(
-                            &story,
-                            &story_fields,
-                            &comment_fields,
-                        ));
-                    }
-                }
-
-                let text = serde_json::to_string(&stories)?;
-                Ok(structured_result_with_text(&stories, Some(text))?)
-            }
-            "get_ask_stories" => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
-
-                let story_ids = self.get_ask_stories_list().await?;
-
-                let mut stories = Vec::new();
-                for item in story_ids.iter().take(limit) {
-                    if let Some(id) = item.id {
-                        let story = self.get_item(id).await?;
-                        stories.push(story_item_to_payload(
-                            &story,
-                            &story_fields,
-                            &comment_fields,
-                        ));
-                    }
-                }
-
-                let text = serde_json::to_string(&stories)?;
-                Ok(structured_result_with_text(&stories, Some(text))?)
-            }
-            "get_show_stories" => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
-
-                let story_ids = self.get_show_stories_list().await?;
-
-                let mut stories = Vec::new();
-                for item in story_ids.iter().take(limit) {
-                    if let Some(id) = item.id {
-                        let story = self.get_item(id).await?;
-                        stories.push(story_item_to_payload(
-                            &story,
-                            &story_fields,
-                            &comment_fields,
-                        ));
-                    }
-                }
-
-                let text = serde_json::to_string(&stories)?;
-                Ok(structured_result_with_text(&stories, Some(text))?)
-            }
-            "get_job_stories" => {
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as usize;
-                let (story_fields, comment_fields) = parse_field_sets(&args);
-
-                let story_ids = self.get_job_stories_list().await?;
-
-                let mut stories = Vec::new();
-                for item in story_ids.iter().take(limit) {
-                    if let Some(id) = item.id {
-                        let story = self.get_item(id).await?;
-                        stories.push(story_item_to_payload(
-                            &story,
-                            &story_fields,
-                            &comment_fields,
-                        ));
+                        let payload = if response_format == "concise" {
+                            story_item_to_concise_payload(&story)
+                        } else {
+                            let (story_fields, comment_fields) =
+                                get_field_sets_for_format(&args, response_format);
+                            story_item_to_payload(&story, &story_fields, &comment_fields)
+                        };
+                        stories.push(payload);
                     }
                 }
 
@@ -1354,32 +1248,56 @@ impl Connector for HackerNewsConnector {
                 Ok(structured_result_with_text(&stories, Some(text))?)
             }
             "get_post" => {
-                // println!("args: {:#?}\n\n\n", args);
                 let id = args.get("id").and_then(|v| v.as_i64()).ok_or(
-                    ConnectorError::InvalidParams("Missing 'id' parameter".to_string()),
+                    ConnectorError::InvalidParams(
+                        "Missing 'id' parameter. Expected a numeric Hacker News item ID (e.g., 12345678)".to_string()
+                    ),
                 )?;
                 let flatten = args
                     .get("flatten")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let (story_fields, comment_fields) = parse_field_sets(&args);
+                let response_format = args
+                    .get("response_format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("concise");
 
                 // Use the Algolia items endpoint directly
                 let url = format!("https://hn.algolia.com/api/v1/items/{}", id);
-                // println!("URL: {}", url);
                 let result = self.fetch_typed::<HackerNewsItem>(&url).await?;
 
-                if flatten {
-                    let mut flattened_payload = Vec::new();
-                    flattened_payload.push(story_as_comment_payload(&result, &comment_fields));
-                    flatten_comment_values(&result, &comment_fields, &mut flattened_payload);
-
-                    let text = serde_json::to_string(&flattened_payload)?;
-                    Ok(structured_result_with_text(&flattened_payload, Some(text))?)
+                if response_format == "concise" {
+                    if flatten {
+                        // Concise + flatten: just text content as flat list
+                        let mut flattened = vec![json!({
+                            "title": result.title.clone().unwrap_or_default(),
+                            "text": result.text.clone().unwrap_or_default()
+                        })];
+                        flatten_comments_concise(&result, &mut flattened);
+                        let text = serde_json::to_string(&flattened)?;
+                        Ok(structured_result_with_text(&flattened, Some(text))?)
+                    } else {
+                        // Concise nested
+                        let payload = story_item_to_concise_payload(&result);
+                        let text = serde_json::to_string(&payload)?;
+                        Ok(structured_result_with_text(&payload, Some(text))?)
+                    }
                 } else {
-                    let payload = story_item_to_payload(&result, &story_fields, &comment_fields);
-                    let text = serde_json::to_string(&payload)?;
-                    Ok(structured_result_with_text(&payload, Some(text))?)
+                    // Detailed format (original behavior)
+                    let (story_fields, comment_fields) =
+                        get_field_sets_for_format(&args, response_format);
+                    if flatten {
+                        let mut flattened_payload = Vec::new();
+                        flattened_payload.push(story_as_comment_payload(&result, &comment_fields));
+                        flatten_comment_values(&result, &comment_fields, &mut flattened_payload);
+                        let text = serde_json::to_string(&flattened_payload)?;
+                        Ok(structured_result_with_text(&flattened_payload, Some(text))?)
+                    } else {
+                        let payload =
+                            story_item_to_payload(&result, &story_fields, &comment_fields);
+                        let text = serde_json::to_string(&payload)?;
+                        Ok(structured_result_with_text(&payload, Some(text))?)
+                    }
                 }
             }
             _ => Err(ConnectorError::ToolNotFound),

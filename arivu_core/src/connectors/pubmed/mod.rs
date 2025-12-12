@@ -14,6 +14,21 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info};
 
+/// Response format for controlling output verbosity
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResponseFormat {
+    #[default]
+    Concise,
+    Detailed,
+}
+
+fn parse_response_format(s: Option<&str>) -> ResponseFormat {
+    match s {
+        Some("detailed") => ResponseFormat::Detailed,
+        _ => ResponseFormat::Concise,
+    }
+}
+
 mod parse;
 use parse::{parse_pubmed_search_document, SearchParseInput};
 
@@ -743,7 +758,7 @@ impl Connector for PubMedConnector {
                 Tool {
                     name: Cow::Borrowed("search"),
                     title: None,
-                    description: Some(Cow::Borrowed("Search for articles in PubMed")),
+                    description: Some(Cow::Borrowed("Search for articles in PubMed. Use MeSH terms and Boolean operators (AND, OR) for precise queries.")),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {
@@ -766,6 +781,12 @@ impl Connector for PubMedConnector {
                             "end_year": {
                                 "type": "integer",
                                 "description": "End year for publication date range filter"
+                            },
+                            "response_format": {
+                                "type": "string",
+                                "enum": ["concise", "detailed"],
+                                "description": "Response verbosity: 'concise' returns only pmid/title/authors, 'detailed' includes all metadata",
+                                "default": "concise"
                             }
                         },
                         "required": ["query"]
@@ -777,13 +798,19 @@ impl Connector for PubMedConnector {
                 Tool {
                     name: Cow::Borrowed("get_abstract"),
                     title: None,
-                    description: Some(Cow::Borrowed("Get the abstract and details of a PubMed article by PMID")),
+                    description: Some(Cow::Borrowed("Get the abstract and details of a PubMed article by PMID.")),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {
                             "pmid": {
                                 "type": "string",
-                                "description": "The PubMed ID (PMID) of the article"
+                                "description": "The PubMed ID (PMID) of the article (e.g., '34762503')"
+                            },
+                            "response_format": {
+                                "type": "string",
+                                "enum": ["concise", "detailed"],
+                                "description": "Response verbosity: 'concise' returns only title/abstract_text, 'detailed' includes all metadata (authors, affiliations, keywords, similar articles, etc.)",
+                                "default": "concise"
                             }
                         },
                         "required": ["pmid"]
@@ -812,6 +839,8 @@ impl Connector for PubMedConnector {
                 // Make all parameters optional
                 let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
                 let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let response_format =
+                    parse_response_format(args.get("response_format").and_then(|v| v.as_str()));
 
                 // Handle optional date range
                 let date_range =
@@ -838,13 +867,39 @@ impl Connector for PubMedConnector {
                         PubMedSearchResult::new()
                     });
 
-                let text = serde_json::to_string(&result)?;
-                Ok(structured_result_with_text(&result, Some(text))?)
+                // Return concise or detailed based on response_format
+                if response_format == ResponseFormat::Concise {
+                    let concise_articles: Vec<_> = result
+                        .articles
+                        .iter()
+                        .map(|a| {
+                            json!({
+                                "pmid": a.pmid,
+                                "title": a.title,
+                                "authors": a.authors
+                            })
+                        })
+                        .collect();
+                    let concise_result = json!({
+                        "articles": concise_articles,
+                        "total_results": result.total_results
+                    });
+                    let text = serde_json::to_string(&concise_result)?;
+                    Ok(structured_result_with_text(&concise_result, Some(text))?)
+                } else {
+                    let text = serde_json::to_string(&result)?;
+                    Ok(structured_result_with_text(&result, Some(text))?)
+                }
             }
             "get_abstract" => {
                 let pmid = args.get("pmid").and_then(|v| v.as_str()).ok_or(
-                    ConnectorError::InvalidParams("Missing 'pmid' parameter".to_string()),
+                    ConnectorError::InvalidParams(
+                        "Missing 'pmid' parameter. Expected a PubMed ID (e.g., '34762503')"
+                            .to_string(),
+                    ),
                 )?;
+                let response_format =
+                    parse_response_format(args.get("response_format").and_then(|v| v.as_str()));
 
                 let abstract_data: PubMedAbstract =
                     self.get_article_abstract(pmid).await.unwrap_or_else(|e| {
@@ -852,8 +907,18 @@ impl Connector for PubMedConnector {
                         PubMedAbstract::new()
                     });
 
-                let text = serde_json::to_string(&abstract_data)?;
-                Ok(structured_result_with_text(&abstract_data, Some(text))?)
+                // Return concise or detailed based on response_format
+                if response_format == ResponseFormat::Concise {
+                    let concise_data = json!({
+                        "title": abstract_data.title,
+                        "abstract_text": abstract_data.abstract_text
+                    });
+                    let text = serde_json::to_string(&concise_data)?;
+                    Ok(structured_result_with_text(&concise_data, Some(text))?)
+                } else {
+                    let text = serde_json::to_string(&abstract_data)?;
+                    Ok(structured_result_with_text(&abstract_data, Some(text))?)
+                }
             }
             _ => Err(ConnectorError::ToolNotFound),
         }

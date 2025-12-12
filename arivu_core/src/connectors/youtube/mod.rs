@@ -25,24 +25,47 @@ use url::Url;
 use yt_transcript_rs::YouTubeTranscriptApi;
 
 // Input/Output structs for tools
+/// Response format for controlling output verbosity
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormat {
+    /// Minimal response for token efficiency - only essential fields (default)
+    #[default]
+    Concise,
+    /// Full response with all metadata
+    Detailed,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GetVideoDetailsInput {
+    /// The YouTube video ID (e.g., 'dQw4w9WgXcQ') or full URL
     pub video_id: String,
+    /// Response verbosity: 'concise' returns only title and transcript/chapters, 'detailed' includes description and all metadata
+    #[serde(default)]
+    pub response_format: ResponseFormat,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SearchVideosInput {
+    /// Search query string
     pub query: String,
+    /// Maximum number of results to return
     #[serde(default = "default_limit")]
     #[schemars(default = "default_limit")]
     pub limit: u64,
+    /// Type of content to search for
     #[serde(default = "default_search_category")]
     #[schemars(default = "default_search_category")]
     pub search_type: SearchCategory,
+    /// Sort order for results
     #[serde(default)]
     pub sort: Option<SearchSort>,
+    /// Filter by upload date
     #[serde(default)]
     pub upload_date: Option<UploadDateFilter>,
+    /// Response verbosity: 'concise' returns only id/title/url, 'detailed' includes all metadata
+    #[serde(default)]
+    pub response_format: ResponseFormat,
 }
 
 fn default_limit() -> u64 {
@@ -528,6 +551,60 @@ pub struct YouTubeContent {
     pub chapters: Vec<ChapterContent>,
 }
 
+/// Concise version of YouTubeContent for token efficiency
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct YouTubeContentConcise {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chapters: Vec<ChapterContentConcise>,
+}
+
+/// Concise chapter content - just heading and content
+#[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
+pub struct ChapterContentConcise {
+    pub heading: String,
+    pub content: String,
+}
+
+/// Concise video search result
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VideoSearchResultConcise {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+}
+
+/// Concise playlist search result
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PlaylistSearchResultConcise {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+}
+
+/// Concise channel search result
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ChannelSearchResultConcise {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum SearchResultItemConcise {
+    Video(VideoSearchResultConcise),
+    Playlist(PlaylistSearchResultConcise),
+    Channel(ChannelSearchResultConcise),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SearchVideosOutputConcise {
+    pub results: Vec<SearchResultItemConcise>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 pub struct ChapterContent {
     pub heading: String,
@@ -787,15 +864,33 @@ impl Connector for YouTubeConnector {
                         }
                     };
 
-                let youtube_content = YouTubeContent {
-                    id: video_id,
-                    title: video_info.video_details.title.clone(),
-                    description: video_info.video_details.description.clone(),
-                    transcript: transcript_out,
-                    chapters: chapters_out,
-                };
-                let text = serde_json::to_string(&youtube_content)?;
-                Ok(structured_result_with_text(&youtube_content, Some(text))?)
+                // Return concise or detailed based on response_format
+                if input.response_format == ResponseFormat::Concise {
+                    let concise_chapters: Vec<ChapterContentConcise> = chapters_out
+                        .iter()
+                        .map(|c| ChapterContentConcise {
+                            heading: c.heading.clone(),
+                            content: c.content.clone(),
+                        })
+                        .collect();
+                    let youtube_content = YouTubeContentConcise {
+                        title: video_info.video_details.title.clone(),
+                        transcript: transcript_out,
+                        chapters: concise_chapters,
+                    };
+                    let text = serde_json::to_string(&youtube_content)?;
+                    Ok(structured_result_with_text(&youtube_content, Some(text))?)
+                } else {
+                    let youtube_content = YouTubeContent {
+                        id: video_id,
+                        title: video_info.video_details.title.clone(),
+                        description: video_info.video_details.description.clone(),
+                        transcript: transcript_out,
+                        chapters: chapters_out,
+                    };
+                    let text = serde_json::to_string(&youtube_content)?;
+                    Ok(structured_result_with_text(&youtube_content, Some(text))?)
+                }
             }
             "search_videos" => {
                 let input: SearchVideosInput = serde_json::from_value(Value::Object(args_map))
@@ -862,11 +957,46 @@ impl Connector for YouTubeConnector {
                     mapped_results.truncate(input.limit as usize);
                 }
 
-                let output = SearchVideosOutput {
-                    results: mapped_results,
-                };
-                let text = serde_json::to_string(&output)?;
-                Ok(structured_result_with_text(&output, Some(text))?)
+                // Return concise or detailed based on response_format
+                if input.response_format == ResponseFormat::Concise {
+                    let concise_results: Vec<SearchResultItemConcise> = mapped_results
+                        .iter()
+                        .map(|r| match r {
+                            SearchResultItem::Video(v) => {
+                                SearchResultItemConcise::Video(VideoSearchResultConcise {
+                                    id: v.id.clone(),
+                                    title: v.title.clone(),
+                                    url: v.url.clone(),
+                                })
+                            }
+                            SearchResultItem::Playlist(p) => {
+                                SearchResultItemConcise::Playlist(PlaylistSearchResultConcise {
+                                    id: p.id.clone(),
+                                    title: p.title.clone(),
+                                    url: p.url.clone(),
+                                })
+                            }
+                            SearchResultItem::Channel(c) => {
+                                SearchResultItemConcise::Channel(ChannelSearchResultConcise {
+                                    id: c.id.clone(),
+                                    title: c.title.clone(),
+                                    url: c.url.clone(),
+                                })
+                            }
+                        })
+                        .collect();
+                    let output = SearchVideosOutputConcise {
+                        results: concise_results,
+                    };
+                    let text = serde_json::to_string(&output)?;
+                    Ok(structured_result_with_text(&output, Some(text))?)
+                } else {
+                    let output = SearchVideosOutput {
+                        results: mapped_results,
+                    };
+                    let text = serde_json::to_string(&output)?;
+                    Ok(structured_result_with_text(&output, Some(text))?)
+                }
             }
             _ => Err(ConnectorError::ToolNotFound),
         }
