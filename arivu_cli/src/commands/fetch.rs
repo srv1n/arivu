@@ -1,5 +1,5 @@
 use crate::cli::Cli;
-use crate::commands::{CommandError, Result};
+use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, OutputData};
 use arivu_core::resolver::{PatternInfo, ResolvedAction, SmartResolver};
 use arivu_core::CallToolRequestParam;
@@ -147,8 +147,8 @@ async fn execute_action(cli: &Cli, action: &ResolvedAction) -> Result<()> {
     match connector.call_tool(request).await {
         Ok(result) => {
             // Prefer structured_content if present (most connectors use this)
-            let output = if let Some(sc) = result.structured_content {
-                OutputData::ToolResult(sc)
+            let (output, json_value) = if let Some(sc) = result.structured_content {
+                (OutputData::ToolResult(sc.clone()), sc)
             } else {
                 // Fall back to extracting text content from result.content
                 let text_content: Vec<String> = result
@@ -166,14 +166,21 @@ async fn execute_action(cli: &Cli, action: &ResolvedAction) -> Result<()> {
                 let combined = text_content.join("\n");
 
                 // Try to parse as JSON for pretty output
-                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&combined) {
-                    OutputData::ToolResult(json_value)
+                if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&combined) {
+                    (OutputData::ToolResult(json_val.clone()), json_val)
                 } else {
-                    OutputData::ToolResult(json!({ "content": combined }))
+                    let val = json!({ "content": combined });
+                    (OutputData::ToolResult(val.clone()), val)
                 }
             };
 
             format_output(&output, &cli.output)?;
+
+            // Copy to clipboard if requested
+            if cli.copy {
+                let text = serde_json::to_string_pretty(&json_value)?;
+                copy_to_clipboard(&text)?;
+            }
         }
         Err(e) => {
             let error_str = e.to_string();

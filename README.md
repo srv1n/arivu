@@ -203,6 +203,25 @@ arivu slack list_channels
 
 # Output formats
 arivu search arxiv "llm" --output json | jq '.results[0]'
+
+# Copy output to clipboard
+arivu --copy fetch hn:38500000
+arivu -c search arxiv "attention mechanism"
+```
+
+### Global Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--copy` | `-c` | Copy output to system clipboard |
+| `--output <format>` | | Output format: `pretty`, `json`, `yaml`, `text`, `markdown` |
+| `--no-color` | | Disable colored output |
+| `--verbose` | `-v` | Verbose output (can be repeated: `-vv`, `-vvv`) |
+
+Note: Global flags must be placed **before** the subcommand:
+```bash
+arivu --copy fetch https://arxiv.org/abs/2301.07041  # Correct
+arivu fetch --copy https://arxiv.org/abs/2301.07041  # Won't work
 ```
 
 ## Configuration

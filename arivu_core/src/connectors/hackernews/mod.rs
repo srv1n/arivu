@@ -572,7 +572,10 @@ impl Default for HackerNewsConnector {
 impl HackerNewsConnector {
     pub fn new() -> Self {
         HackerNewsConnector {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .user_agent("arivu/0.1.0")
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 
@@ -600,15 +603,32 @@ impl HackerNewsConnector {
         let res = self
             .client
             .get(url)
-            .header("User-Agent", "rzn_datasourcer/0.1.0")
             .send()
             .await
             .map_err(|e| ConnectorError::Other(format!("Request error: {}", e)))?;
-        let typed_response = res
-            .json::<T>()
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            return Err(ConnectorError::Other(format!(
+                "HTTP error {}: {}",
+                status, body
+            )));
+        }
+
+        let text = res
+            .text()
             .await
-            .map_err(|e| ConnectorError::Other(format!("JSON parse error: {}", e)))?;
-        Ok(typed_response)
+            .map_err(|e| ConnectorError::Other(format!("Response error: {}", e)))?;
+
+        serde_json::from_str(&text).map_err(|e| {
+            ConnectorError::Other(format!(
+                "JSON parse error: {} (url: {}, response: {}...)",
+                e,
+                url,
+                &text[..100.min(text.len())]
+            ))
+        })
     }
 
     // Helper: fetch Algolia search response from URL
@@ -619,15 +639,31 @@ impl HackerNewsConnector {
         let res = self
             .client
             .get(url)
-            .header("User-Agent", "rzn_datasourcer/0.1.0")
             .send()
             .await
             .map_err(|e| ConnectorError::Other(format!("Request error: {}", e)))?;
-        let json = res
-            .json::<AlgoliaSearchResponse>()
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            return Err(ConnectorError::Other(format!(
+                "HTTP error {}: {}",
+                status, body
+            )));
+        }
+
+        let text = res
+            .text()
             .await
-            .map_err(|e| ConnectorError::Other(format!("JSON parse error: {}", e)))?;
-        Ok(json)
+            .map_err(|e| ConnectorError::Other(format!("Response error: {}", e)))?;
+
+        serde_json::from_str(&text).map_err(|e| {
+            ConnectorError::Other(format!(
+                "JSON parse error: {} (response: {}...)",
+                e,
+                &text[..100.min(text.len())]
+            ))
+        })
     }
 
     // Helper: fetch a Hacker News item by ID using Algolia API
@@ -638,7 +674,7 @@ impl HackerNewsConnector {
 
     // Helper: fetch top stories
     async fn get_top_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search?tags=front_page";
+        let url = "https://hn.algolia.com/api/v1/search?tags=front_page";
         let response = self.fetch_algolia_search(url).await?;
         Ok(response
             .hits
@@ -670,14 +706,14 @@ impl HackerNewsConnector {
 
     // Helper: fetch new stories
     async fn get_new_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search_by_date?tags=story";
+        let url = "https://hn.algolia.com/api/v1/search_by_date?tags=story";
         let response = self.fetch_algolia_search(url).await?;
         Ok(self.hits_to_items(response.hits.unwrap_or_default()))
     }
 
     // Helper: fetch best stories (front page sorted by points)
     async fn get_best_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50";
+        let url = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50";
         let response = self.fetch_algolia_search(url).await?;
         let mut items = self.hits_to_items(response.hits.unwrap_or_default());
         // Sort by points descending for "best"
@@ -687,21 +723,21 @@ impl HackerNewsConnector {
 
     // Helper: fetch ask stories
     async fn get_ask_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search_by_date?tags=ask_hn";
+        let url = "https://hn.algolia.com/api/v1/search_by_date?tags=ask_hn";
         let response = self.fetch_algolia_search(url).await?;
         Ok(self.hits_to_items(response.hits.unwrap_or_default()))
     }
 
     // Helper: fetch show stories
     async fn get_show_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search_by_date?tags=show_hn";
+        let url = "https://hn.algolia.com/api/v1/search_by_date?tags=show_hn";
         let response = self.fetch_algolia_search(url).await?;
         Ok(self.hits_to_items(response.hits.unwrap_or_default()))
     }
 
     // Helper: fetch job stories
     async fn get_job_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "http://hn.algolia.com/api/v1/search_by_date?tags=job";
+        let url = "https://hn.algolia.com/api/v1/search_by_date?tags=job";
         let response = self.fetch_algolia_search(url).await?;
         Ok(self.hits_to_items(response.hits.unwrap_or_default()))
     }
@@ -1107,7 +1143,7 @@ impl Connector for HackerNewsConnector {
 
                 // Build the base URL
                 let mut url = format!(
-                    "http://hn.algolia.com/api/v1/search?query={}&page={}&hitsPerPage={}",
+                    "https://hn.algolia.com/api/v1/search?query={}&page={}&hitsPerPage={}",
                     urlencoding::encode(query),
                     page,
                     hits_per_page
@@ -1151,7 +1187,7 @@ impl Connector for HackerNewsConnector {
 
                 // Build the base URL
                 let mut url = format!(
-                    "http://hn.algolia.com/api/v1/search_by_date?query={}&page={}&hitsPerPage={}",
+                    "https://hn.algolia.com/api/v1/search_by_date?query={}&page={}&hitsPerPage={}",
                     urlencoding::encode(query),
                     page,
                     hits_per_page

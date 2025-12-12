@@ -402,29 +402,34 @@ arivu tools youtube --output markdown
 
 ## Global Options
 
-### Output Format
-```bash
---output FORMAT
-```
-Available formats: `pretty`, `json`, `yaml`, `text`, `markdown`
+All global options must be placed **before** the subcommand.
 
-### Disable Colors
-```bash
---no-color
-```
-Useful for scripts or terminals without color support.
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--output <FORMAT>` | | Output format: `pretty`, `json`, `yaml`, `text`, `markdown` |
+| `--copy` | `-c` | Copy output to system clipboard |
+| `--no-color` | | Disable colored output |
+| `--verbose` | `-v` | Verbose output (can repeat: `-vv`, `-vvv`) |
+| `--tui` | | Launch interactive TUI mode *(Coming Soon)* |
 
-### Verbose Output
+### Examples
 ```bash
--v, -vv, -vvv
-```
-Increase verbosity for debugging.
+# Copy results to clipboard
+arivu --copy fetch https://arxiv.org/abs/2301.07041
+arivu -c search youtube "rust tutorial"
 
-### TUI Mode *(Coming Soon)*
-```bash
---tui
+# Output as JSON and copy to clipboard
+arivu --copy --output json hackernews search_stories "rust"
+
+# Verbose mode for debugging
+arivu -vv search youtube "test"
 ```
-Launch interactive dashboard mode.
+
+**Note:** Global flags must come before the subcommand:
+```bash
+arivu --copy fetch hn:12345678    # ✓ Correct
+arivu fetch --copy hn:12345678    # ✗ Won't work
+```
 
 ## Authentication Setup
 
