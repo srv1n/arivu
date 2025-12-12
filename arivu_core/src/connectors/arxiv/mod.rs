@@ -39,6 +39,15 @@ pub struct ArxivLink {
     pub link_type: Option<String>,
 }
 
+/// Response format for controlling output verbosity
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormat {
+    #[default]
+    Concise,
+    Detailed,
+}
+
 // Define the structs for search arguments
 #[derive(Debug, Deserialize)]
 struct SearchPapersArgs {
@@ -51,11 +60,15 @@ struct SearchPapersArgs {
     sort_by: String,
     #[serde(default = "default_sort_order")]
     sort_order: String,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 #[derive(Debug, Deserialize)]
 struct GetPaperDetailsArgs {
     paper_id: String,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 fn default_max_results() -> i32 {
@@ -364,6 +377,15 @@ impl ArxivConnector {
 
         result
     }
+
+    // Helper method to format paper in concise format (fewer tokens)
+    fn format_paper_concise(&self, paper: &ArxivPaper) -> HashMap<String, Value> {
+        let mut result = HashMap::new();
+        result.insert("id".to_string(), json!(paper.id));
+        result.insert("title".to_string(), json!(paper.title));
+        result.insert("summary".to_string(), json!(paper.summary));
+        result
+    }
 }
 
 #[async_trait]
@@ -400,6 +422,7 @@ impl Connector for ArxivConnector {
             start: 0,
             sort_by: "relevance".to_string(),
             sort_order: "descending".to_string(),
+            response_format: ResponseFormat::default(),
         };
 
         let papers = self.search_papers(&args).await?;
@@ -495,7 +518,7 @@ impl Connector for ArxivConnector {
             Tool {
                 name: Cow::Borrowed("search_papers"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for papers on arXiv.org")),
+                description: Some(Cow::Borrowed("Search for papers on arXiv.org. Supports field-specific queries like 'ti:neural AND au:hinton' for title and author searches.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -518,6 +541,12 @@ impl Connector for ArxivConnector {
                         "sort_order": {
                             "type": "string",
                             "description": "Sort order: 'ascending' or 'descending' (default: 'descending')"
+                        },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' (default) returns only id/title/summary, 'detailed' includes all metadata (authors, dates, links, etc.)",
+                            "default": "concise"
                         }
                     },
                     "required": ["query"]
@@ -530,13 +559,19 @@ impl Connector for ArxivConnector {
             Tool {
                 name: Cow::Borrowed("get_paper_details"),
                 title: None,
-                description: Some(Cow::Borrowed("Get detailed information about a specific paper")),
+                description: Some(Cow::Borrowed("Get detailed information about a specific arXiv paper by ID.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "paper_id": {
                             "type": "string",
-                            "description": "The arXiv ID of the paper (e.g., '2101.12345')"
+                            "description": "The arXiv ID of the paper (e.g., '2101.12345' or 'hep-th/9901001')"
+                        },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' (default) returns only id/title/summary, 'detailed' includes all metadata",
+                            "default": "concise"
                         }
                     },
                     "required": ["paper_id"]
@@ -586,17 +621,27 @@ impl Connector for ArxivConnector {
                 let papers = self.search_papers(&args).await?;
                 let results: Vec<HashMap<String, Value>> = papers
                     .iter()
-                    .map(|paper| self.format_paper(paper))
+                    .map(|paper| {
+                        if args.response_format == ResponseFormat::Concise {
+                            self.format_paper_concise(paper)
+                        } else {
+                            self.format_paper(paper)
+                        }
+                    })
                     .collect();
 
-                let data = json!({
-                    "query": args.query,
-                    "start": args.start,
-                    "max_results": args.max_results,
-                    "sort_by": args.sort_by,
-                    "sort_order": args.sort_order,
-                    "results": results,
-                });
+                let data = if args.response_format == ResponseFormat::Concise {
+                    json!({ "results": results })
+                } else {
+                    json!({
+                        "query": args.query,
+                        "start": args.start,
+                        "max_results": args.max_results,
+                        "sort_by": args.sort_by,
+                        "sort_order": args.sort_order,
+                        "results": results,
+                    })
+                };
                 let text = serde_json::to_string(&data).map_err(ConnectorError::SerdeJson)?;
                 Ok(structured_result_with_text(&data, Some(text))?)
             }
@@ -609,7 +654,11 @@ impl Connector for ArxivConnector {
 
                 match self.get_paper_details(&args.paper_id).await {
                     Ok(paper) => {
-                        let result = self.format_paper(&paper);
+                        let result = if args.response_format == ResponseFormat::Concise {
+                            self.format_paper_concise(&paper)
+                        } else {
+                            self.format_paper(&paper)
+                        };
                         let text =
                             serde_json::to_string(&result).map_err(ConnectorError::SerdeJson)?;
                         Ok(structured_result_with_text(&result, Some(text))?)

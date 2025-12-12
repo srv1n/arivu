@@ -19,11 +19,14 @@ These connectors work immediately after installation.
 | Connector | Description |
 |-----------|-------------|
 | <img src="https://www.google.com/s2/favicons?domain=arxiv.org&sz=16" width="16" height="16" /> ArXiv | Search and retrieve academic preprints |
+| <img src="https://www.google.com/s2/favicons?domain=biorxiv.org&sz=16" width="16" height="16" /> bioRxiv/medRxiv | Biology and medicine preprints |
 | <img src="https://www.google.com/s2/favicons?domain=pubmed.ncbi.nlm.nih.gov&sz=16" width="16" height="16" /> PubMed | Search biomedical and life sciences literature |
 | <img src="https://www.google.com/s2/favicons?domain=semanticscholar.org&sz=16" width="16" height="16" /> Semantic Scholar | Academic paper search, citations, references |
+| <img src="https://www.google.com/s2/favicons?domain=scholar.google.com&sz=16" width="16" height="16" /> Google Scholar | Academic paper search |
 | <img src="https://www.google.com/s2/favicons?domain=wikipedia.org&sz=16" width="16" height="16" /> Wikipedia | Article content and search |
 | <img src="https://www.google.com/s2/favicons?domain=news.ycombinator.com&sz=16" width="16" height="16" /> Hacker News | Stories, comments, user profiles |
 | <img src="https://www.google.com/s2/favicons?domain=youtube.com&sz=16" width="16" height="16" /> YouTube | Video metadata, transcripts, search |
+| <img src="https://www.google.com/s2/favicons?domain=rss.com&sz=16" width="16" height="16" /> RSS | Fetch and parse RSS/Atom feeds |
 | <img src="https://www.google.com/s2/favicons?domain=w3.org&sz=16" width="16" height="16" /> Web Scraper | HTML content extraction with CSS selectors |
 
 ### Optional Authentication
@@ -41,10 +44,12 @@ These connectors work without credentials but offer additional functionality whe
 | Connector | Auth Type | Description |
 |-----------|-----------|-------------|
 | <img src="https://www.google.com/s2/favicons?domain=slack.com&sz=16" width="16" height="16" /> Slack | Bot token | Channels, messages, users |
+| <img src="https://www.google.com/s2/favicons?domain=discord.com&sz=16" width="16" height="16" /> Discord | Bot token | Servers, channels, messages |
 | <img src="https://www.google.com/s2/favicons?domain=atlassian.com&sz=16" width="16" height="16" /> Atlassian | API token | Jira issues, Confluence pages |
 | <img src="https://www.google.com/s2/favicons?domain=drive.google.com&sz=16" width="16" height="16" /> Google Drive | OAuth2 | Files and folders |
 | <img src="https://www.google.com/s2/favicons?domain=gmail.com&sz=16" width="16" height="16" /> Gmail | OAuth2 | Email access |
 | <img src="https://www.google.com/s2/favicons?domain=calendar.google.com&sz=16" width="16" height="16" /> Google Calendar | OAuth2 | Calendar events |
+| <img src="https://www.google.com/s2/favicons?domain=contacts.google.com&sz=16" width="16" height="16" /> Google Contacts | OAuth2 | People/contacts |
 | <img src="https://www.google.com/s2/favicons?domain=microsoft.com&sz=16" width="16" height="16" /> Microsoft Graph | OAuth2 | OneDrive, Outlook, Calendar |
 | <img src="https://www.google.com/s2/favicons?domain=gmail.com&sz=16" width="16" height="16" /> IMAP | Server credentials | Email retrieval |
 | <img src="https://www.google.com/s2/favicons?domain=x.com&sz=16" width="16" height="16" /> X (Twitter) | Credentials/Cookies | Tweets, profiles, search |
@@ -59,6 +64,7 @@ These connectors query AI-powered or traditional search APIs.
 | <img src="https://www.google.com/s2/favicons?domain=exa.ai&sz=16" width="16" height="16" /> Exa | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=tavily.com&sz=16" width="16" height="16" /> Tavily | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=serpapi.com&sz=16" width="16" height="16" /> SerpApi | API Key |
+| <img src="https://www.google.com/s2/favicons?domain=serper.dev&sz=16" width="16" height="16" /> Serper | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=firecrawl.dev&sz=16" width="16" height="16" /> Firecrawl | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=anthropic.com&sz=16" width="16" height="16" /> Anthropic | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=openai.com&sz=16" width="16" height="16" /> OpenAI | API Key |
@@ -125,12 +131,22 @@ $ arivu fetch 12345678
 Ambiguous: Input '12345678' matches multiple patterns:
 
   [1] hackernews → get_post (Hacker News item ID)
-  [2] pubmed → get_article (PubMed ID)
+  [2] pubmed → get_abstract (PubMed ID)
 
 Select option [1-2]:
 ```
 
 Use prefixes to avoid ambiguity: `hn:12345678`, `PMID:12345678`, `arXiv:2301.07041`.
+
+**Shell quoting:** URLs containing `?` (like YouTube watch URLs) need to be quoted:
+
+```bash
+# This will fail in zsh/bash - the ? is interpreted as a glob
+arivu fetch https://www.youtube.com/watch?v=dQw4w9WgXcQ  # Error!
+
+# Quote the URL to make it work
+arivu fetch "https://www.youtube.com/watch?v=dQw4w9WgXcQ"  # Works!
+```
 
 ```bash
 # View all supported patterns
@@ -208,6 +224,27 @@ arivu search arxiv "llm" --output json | jq '.results[0]'
 arivu --copy fetch hn:38500000
 arivu -c search arxiv "attention mechanism"
 ```
+
+### Response Format
+
+Most connectors support a `response_format` parameter to control output verbosity:
+
+- **`concise`** (default): Returns only essential fields for token efficiency
+- **`detailed`**: Returns full metadata including all available fields
+
+```bash
+# Concise output (default) - minimal fields, fewer tokens
+arivu hackernews get_stories --args '{"story_type":"top","limit":5}'
+
+# Detailed output - full metadata
+arivu hackernews get_stories --args '{"story_type":"top","limit":5,"response_format":"detailed"}'
+
+# Works across connectors
+arivu pubmed search --args '{"query":"CRISPR","response_format":"detailed"}'
+arivu github list_issues --args '{"owner":"rust-lang","repo":"rust","response_format":"concise"}'
+```
+
+This is particularly useful when integrating with AI agents where token usage matters. The concise format reduces response size while preserving the most important information.
 
 ### Global Flags
 

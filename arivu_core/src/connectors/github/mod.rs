@@ -106,6 +106,15 @@ impl GitHubConnector {
     }
 }
 
+/// Response format for controlling output verbosity
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormat {
+    #[default]
+    Concise,
+    Detailed,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct ListIssuesInput {
     owner: String,
@@ -120,6 +129,8 @@ struct ListIssuesInput {
     per_page: Option<u8>,
     #[serde(default)]
     page: Option<u32>,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -155,6 +166,8 @@ struct CodeSearchInput {
     per_page: Option<u8>,
     #[serde(default)]
     page: Option<u32>,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -269,13 +282,14 @@ impl Connector for GitHubConnector {
                 input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
-                        "owner":{"type":"string"},
-                        "repo":{"type":"string"},
-                        "state":{"type":"string"},
-                        "labels":{"type":"string"},
-                        "assignee":{"type":"string"},
+                        "owner":{"type":"string","description":"Repository owner (user or organization)"},
+                        "repo":{"type":"string","description":"Repository name"},
+                        "state":{"type":"string","description":"Filter by state: 'open', 'closed', or 'all'"},
+                        "labels":{"type":"string","description":"Comma-separated list of label names"},
+                        "assignee":{"type":"string","description":"Filter by assignee username"},
                         "per_page":{"type":"integer","minimum":1,"maximum":100},
-                        "page":{"type":"integer","minimum":1}
+                        "page":{"type":"integer","minimum":1},
+                        "response_format":{"type":"string","enum":["concise","detailed"],"description":"'concise' returns only number/title/state, 'detailed' includes full metadata","default":"concise"}
                     }
                 }).as_object().expect("Schema object").clone()),
                 output_schema: None,
@@ -355,13 +369,14 @@ impl Connector for GitHubConnector {
             Tool {
                 name: Cow::Borrowed("code_search"),
                 title: None,
-                description: Some(Cow::Borrowed("Search code via GitHub search API (use qualifiers like repo:, org:).")),
+                description: Some(Cow::Borrowed("Search code via GitHub search API. Use qualifiers like 'repo:owner/name', 'language:rust', 'path:src/'.")),
                 input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
-                        "query":{"type":"string"},
+                        "query":{"type":"string","description":"Search query with optional qualifiers (e.g., 'error repo:rust-lang/rust language:rust')"},
                         "per_page":{"type":"integer","minimum":1,"maximum":100},
-                        "page":{"type":"integer","minimum":1}
+                        "page":{"type":"integer","minimum":1},
+                        "response_format":{"type":"string","enum":["concise","detailed"],"description":"'concise' returns only path/repo/url, 'detailed' includes full metadata","default":"concise"}
                     },
                     "required":["query"]
                 }).as_object().expect("Schema object").clone()),
@@ -442,10 +457,27 @@ impl Connector for GitHubConnector {
                     .send()
                     .await
                     .map_err(|e| ConnectorError::Other(e.to_string()))?;
-                structured_result_with_text(
-                    &json!({"items": issues.items, "total_count": issues.total_count}),
-                    None,
-                )
+
+                // Return concise or detailed based on response_format
+                if input.response_format == ResponseFormat::Concise {
+                    let concise_items: Vec<_> = issues
+                        .items
+                        .iter()
+                        .map(|i| {
+                            json!({
+                                "number": i.number,
+                                "title": i.title,
+                                "state": i.state
+                            })
+                        })
+                        .collect();
+                    structured_result_with_text(&json!({"items": concise_items}), None)
+                } else {
+                    structured_result_with_text(
+                        &json!({"items": issues.items, "total_count": issues.total_count}),
+                        None,
+                    )
+                }
             }
             "get_issue" => {
                 let input: GetIssueInput = serde_json::from_value(Value::Object(args_map))
@@ -574,10 +606,30 @@ impl Connector for GitHubConnector {
                     .send()
                     .await
                     .map_err(|e| ConnectorError::Other(e.to_string()))?;
-                structured_result_with_text(
-                    &json!({"total_count": result.total_count, "incomplete_results": result.incomplete_results, "items": result.items}),
-                    None,
-                )
+
+                // Return concise or detailed based on response_format
+                if input.response_format == ResponseFormat::Concise {
+                    let concise_items: Vec<_> = result
+                        .items
+                        .iter()
+                        .map(|i| {
+                            json!({
+                                "path": i.path,
+                                "repository": i.repository.full_name,
+                                "html_url": i.html_url
+                            })
+                        })
+                        .collect();
+                    structured_result_with_text(
+                        &json!({"items": concise_items, "total_count": result.total_count}),
+                        None,
+                    )
+                } else {
+                    structured_result_with_text(
+                        &json!({"total_count": result.total_count, "incomplete_results": result.incomplete_results, "items": result.items}),
+                        None,
+                    )
+                }
             }
             "auth_start" => {
                 let client = reqwest::Client::new();

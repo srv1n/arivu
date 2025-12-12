@@ -11,12 +11,23 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Response format for controlling output verbosity
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormat {
+    #[default]
+    Concise,
+    Detailed,
+}
+
 // Define the structs for search arguments
 #[derive(Debug, Deserialize)]
 struct SearchArgs {
     query: String,
     #[serde(default = "default_limit")]
     limit: u32,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +41,8 @@ struct GeoSearchArgs {
 #[derive(Debug, Deserialize)]
 struct GetArticleArgs {
     title: String,
+    #[serde(default)]
+    response_format: ResponseFormat,
 }
 
 fn default_limit() -> u32 {
@@ -436,17 +449,23 @@ impl Connector for WikipediaConnector {
             Tool {
                 name: Cow::Borrowed("search"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for articles on Wikipedia.")),
+                description: Some(Cow::Borrowed("Search for articles on Wikipedia by keyword.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query."
+                            "description": "The search query (e.g., 'quantum computing')"
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Maximum number of results to return (default: 10)."
+                            "description": "Maximum number of results to return (default: 10)"
+                        },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' returns only article titles, 'detailed' includes query metadata",
+                            "default": "concise"
                         }
                     },
                     "required": ["query"]
@@ -484,13 +503,19 @@ impl Connector for WikipediaConnector {
             Tool {
                 name: Cow::Borrowed("get_article"),
                 title: None,
-                description: Some(Cow::Borrowed("Get the content of a Wikipedia article.")),
+                description: Some(Cow::Borrowed("Get the content of a Wikipedia article by title.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "The title of the article."
+                            "description": "The title of the article (e.g., 'Rust (programming language)')"
+                        },
+                        "response_format": {
+                            "type": "string",
+                            "enum": ["concise", "detailed"],
+                            "description": "Response verbosity: 'concise' returns only title and summary (first paragraph), 'detailed' includes full content",
+                            "default": "concise"
                         }
                     },
                     "required": ["title"]
@@ -521,12 +546,18 @@ impl Connector for WikipediaConnector {
                 })?;
 
                 let results = self.search_articles(&args.query, args.limit).await?;
-                let data = json!({
-                    "query": args.query,
-                    "limit": args.limit,
-                    "results": results,
-                    "count": results.len()
-                });
+
+                // Return concise or detailed based on response_format
+                let data = if args.response_format == ResponseFormat::Concise {
+                    json!({ "results": results })
+                } else {
+                    json!({
+                        "query": args.query,
+                        "limit": args.limit,
+                        "results": results,
+                        "count": results.len()
+                    })
+                };
                 let text = serde_json::to_string(&data)?;
                 Ok(structured_result_with_text(&data, Some(text))?)
             }
@@ -557,8 +588,18 @@ impl Connector for WikipediaConnector {
                     Ok(content) => {
                         let summary = self.get_article_summary(&args.title).await.ok();
 
-                        let article_data =
-                            self.format_article(&args.title, &content, summary.as_deref());
+                        // Return concise or detailed based on response_format
+                        let article_data = if args.response_format == ResponseFormat::Concise {
+                            // Concise: just title and summary (first paragraph)
+                            let mut result = HashMap::new();
+                            result.insert("title".to_string(), json!(args.title));
+                            if let Some(ref s) = summary {
+                                result.insert("summary".to_string(), json!(s));
+                            }
+                            result
+                        } else {
+                            self.format_article(&args.title, &content, summary.as_deref())
+                        };
                         let text = serde_json::to_string(&article_data)?;
                         Ok(structured_result_with_text(&article_data, Some(text))?)
                     }

@@ -22,16 +22,21 @@ pub async fn run(cli: &Cli, input: &str) -> Result<()> {
             input.yellow()
         );
         println!();
+        print_shell_quoting_hint(input);
         println!("Run {} to see supported formats.", "arivu formats".cyan());
         println!();
         return Ok(());
     }
 
+    // Filter out low-priority matches when there's a clear winner
+    // If highest priority is significantly higher than others (e.g., 100 vs 1), auto-select
+    let actions = filter_ambiguous_matches(actions);
+
     // If only one match, use it directly
     let action = if actions.len() == 1 {
         actions.into_iter().next().unwrap()
     } else {
-        // Multiple matches - let user choose
+        // Multiple matches with similar priority - let user choose
         select_action(cli, input, actions)?
     };
 
@@ -49,11 +54,40 @@ pub async fn run(cli: &Cli, input: &str) -> Result<()> {
             action.connector.cyan().bold(),
             action.tool.green()
         );
+
+        // Show hint if it looks like a URL that should have matched a specific connector
+        // but fell back to generic web scraping
+        if action.connector == "web" {
+            print_shell_quoting_hint(input);
+        }
+
         println!();
     }
 
     // Execute the action
     execute_action(cli, &action).await
+}
+
+/// Filter out low-priority matches when there's a clear winner
+/// This prevents showing "ambiguous" when a specific pattern (e.g., YouTube URL)
+/// matches alongside a generic one (e.g., web URL)
+fn filter_ambiguous_matches(mut actions: Vec<ResolvedAction>) -> Vec<ResolvedAction> {
+    if actions.len() <= 1 {
+        return actions;
+    }
+
+    // Sort by priority descending
+    actions.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+    let highest_priority = actions[0].priority;
+
+    // Keep only actions within 20 priority points of the highest
+    // This filters out generic web URL (priority 1) when YouTube URL (priority 100) matches
+    // But keeps similar-priority patterns (e.g., HN ID vs PubMed ID both ~50-80)
+    actions
+        .into_iter()
+        .filter(|a| highest_priority - a.priority <= 20)
+        .collect()
 }
 
 /// Let user select from multiple matching actions
@@ -118,22 +152,28 @@ async fn execute_action(cli: &Cli, action: &ResolvedAction) -> Result<()> {
 
     let connector = provider.lock().await;
 
-    // Build the tool request - convert numeric strings to numbers where needed
+    // Build the tool request
+    // Convert string values to integers for parameters that are typically numeric IDs
+    // but keep other string values as-is (e.g., pmid for pubmed should stay as string)
     let arguments = if action.arguments.is_empty() {
         None
     } else {
         let mut args = serde_json::Map::new();
         for (key, value) in &action.arguments {
-            // Try to parse string values as integers for numeric parameters
-            if let serde_json::Value::String(s) = value {
-                if let Ok(num) = s.parse::<i64>() {
-                    args.insert(key.clone(), serde_json::Value::Number(num.into()));
-                } else {
-                    args.insert(key.clone(), value.clone());
+            // Only convert to integer for specific parameter names that connectors expect as numbers
+            // Keep pmid, paper_id, video_id etc. as strings since those connectors expect strings
+            let should_convert_to_int =
+                key == "id" || key == "number" || key == "item_id" || key == "channel_id";
+
+            if should_convert_to_int {
+                if let serde_json::Value::String(s) = value {
+                    if let Ok(num) = s.parse::<i64>() {
+                        args.insert(key.clone(), serde_json::Value::Number(num.into()));
+                        continue;
+                    }
                 }
-            } else {
-                args.insert(key.clone(), value.clone());
             }
+            args.insert(key.clone(), value.clone());
         }
         Some(args)
     };
@@ -273,4 +313,30 @@ pub async fn show_formats(cli: &Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Print a hint about shell quoting if the input looks like a truncated URL
+fn print_shell_quoting_hint(input: &str) {
+    // Check if input looks like it might have been affected by shell globbing
+    // Common signs: URL contains a domain that typically needs query params
+    // but the query string is missing (truncated at ?)
+    let looks_truncated = input.starts_with("http")
+        && !input.contains('?')
+        && (input.contains("youtube.com/watch")
+            || input.contains("youtu.be/watch")
+            || input.contains("news.ycombinator.com/item"));
+
+    if looks_truncated {
+        println!(
+            "  {} URLs with {} need to be quoted in the shell:",
+            "Hint:".cyan().bold(),
+            "?".yellow()
+        );
+        println!(
+            "    {} arivu fetch {}",
+            "$".dimmed(),
+            "\"https://youtube.com/watch?v=VIDEO_ID\"".green()
+        );
+        println!();
+    }
 }

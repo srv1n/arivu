@@ -39,6 +39,8 @@ pub struct ResolvedAction {
     pub arguments: HashMap<String, serde_json::Value>,
     /// Confidence score (0.0 - 1.0) for this match
     pub confidence: f32,
+    /// Priority of the pattern (higher = more specific)
+    pub priority: u32,
     /// Human-readable description of what was detected
     pub description: String,
 }
@@ -136,6 +138,7 @@ impl SmartResolver {
                     tool: pattern.tool.to_string(),
                     arguments,
                     confidence: 1.0,
+                    priority: pattern.priority,
                     description: pattern.description.to_string(),
                 });
             }
@@ -195,6 +198,7 @@ impl SmartResolver {
                     tool: pattern.tool.to_string(),
                     arguments,
                     confidence: 1.0,
+                    priority: pattern.priority,
                     description: pattern.description.to_string(),
                 });
             }
@@ -325,30 +329,30 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "arxiv_url",
             connector: "arxiv",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"(?:https?://)?arxiv\.org/(?:abs|pdf)/(?P<arxiv_id>\d{4}\.\d{4,5}(?:v\d+)?)").unwrap(),
             captures: &["arxiv_id"],
-            arg_mapping: &[("arxiv_id", "id")],
+            arg_mapping: &[("arxiv_id", "paper_id")],
             priority: 100,
             description: "ArXiv paper URL",
         },
         InputPattern {
             id: "arxiv_id",
             connector: "arxiv",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"^(?:arXiv:|arxiv:)?(?P<arxiv_id>\d{4}\.\d{4,5}(?:v\d+)?)$").unwrap(),
             captures: &["arxiv_id"],
-            arg_mapping: &[("arxiv_id", "id")],
+            arg_mapping: &[("arxiv_id", "paper_id")],
             priority: 90,
             description: "ArXiv paper ID (e.g., 2301.07041 or arXiv:2301.07041)",
         },
         InputPattern {
             id: "arxiv_old_id",
             connector: "arxiv",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"^(?:arXiv:|arxiv:)?(?P<arxiv_id>[a-z-]+/\d{7})$").unwrap(),
             captures: &["arxiv_id"],
-            arg_mapping: &[("arxiv_id", "id")],
+            arg_mapping: &[("arxiv_id", "paper_id")],
             priority: 90,
             description: "ArXiv old-style ID (e.g., hep-th/9901001)",
         },
@@ -357,7 +361,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "pubmed_url",
             connector: "pubmed",
-            tool: "get_article",
+            tool: "get_abstract",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?(?:ncbi\.nlm\.nih\.gov/pubmed/|pubmed\.ncbi\.nlm\.nih\.gov/)(?P<pmid>\d+)").unwrap(),
             captures: &["pmid"],
             arg_mapping: &[("pmid", "pmid")],
@@ -367,7 +371,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "pubmed_id",
             connector: "pubmed",
-            tool: "get_article",
+            tool: "get_abstract",
             pattern: Regex::new(r"^(?:PMID:|pmid:|PubMed:)?(?P<pmid>\d{7,8})$").unwrap(),
             captures: &["pmid"],
             arg_mapping: &[("pmid", "pmid")],
@@ -379,7 +383,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "doi_url",
             connector: "semantic-scholar",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"(?:https?://)?(?:dx\.)?doi\.org/(?P<doi>10\.\d{4,}/[^\s]+)").unwrap(),
             captures: &["doi"],
             arg_mapping: &[("doi", "paper_id")],
@@ -389,7 +393,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "doi_bare",
             connector: "semantic-scholar",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"^(?:doi:|DOI:)?(?P<doi>10\.\d{4,}/[^\s]+)$").unwrap(),
             captures: &["doi"],
             arg_mapping: &[("doi", "paper_id")],
@@ -401,7 +405,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "semantic_scholar_url",
             connector: "semantic-scholar",
-            tool: "get_paper",
+            tool: "get_paper_details",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?semanticscholar\.org/paper/[^/]+/(?P<paper_id>[a-f0-9]{40})").unwrap(),
             captures: &["paper_id"],
             arg_mapping: &[("paper_id", "paper_id")],
@@ -413,7 +417,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "wikipedia_url",
             connector: "wikipedia",
-            tool: "get_page",
+            tool: "get_article",
             pattern: Regex::new(r"(?:https?://)?(?P<lang>[a-z]{2})\.wikipedia\.org/wiki/(?P<title>[^\s?#]+)").unwrap(),
             captures: &["lang", "title"],
             arg_mapping: &[("title", "title")],
@@ -425,20 +429,20 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "github_repo_url",
             connector: "github",
-            tool: "get_repository",
+            tool: "list_issues",
             pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/?$").unwrap(),
             captures: &["owner", "repo"],
             arg_mapping: &[("owner", "owner"), ("repo", "repo")],
             priority: 100,
-            description: "GitHub repository URL",
+            description: "GitHub repository URL (lists issues)",
         },
         InputPattern {
             id: "github_issue_url",
             connector: "github",
             tool: "get_issue",
-            pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/issues/(?P<issue_number>\d+)").unwrap(),
-            captures: &["owner", "repo", "issue_number"],
-            arg_mapping: &[("owner", "owner"), ("repo", "repo"), ("issue_number", "issue_number")],
+            pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/issues/(?P<number>\d+)").unwrap(),
+            captures: &["owner", "repo", "number"],
+            arg_mapping: &[("owner", "owner"), ("repo", "repo"), ("number", "number")],
             priority: 100,
             description: "GitHub issue URL",
         },
@@ -446,28 +450,28 @@ fn build_default_patterns() -> Vec<InputPattern> {
             id: "github_pr_url",
             connector: "github",
             tool: "get_pull_request",
-            pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/pull/(?P<pr_number>\d+)").unwrap(),
-            captures: &["owner", "repo", "pr_number"],
-            arg_mapping: &[("owner", "owner"), ("repo", "repo"), ("pr_number", "pr_number")],
+            pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/pull/(?P<number>\d+)").unwrap(),
+            captures: &["owner", "repo", "number"],
+            arg_mapping: &[("owner", "owner"), ("repo", "repo"), ("number", "number")],
             priority: 100,
             description: "GitHub pull request URL",
         },
         InputPattern {
             id: "github_repo_shorthand",
             connector: "github",
-            tool: "get_repository",
+            tool: "list_issues",
             pattern: Regex::new(r"^(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)$").unwrap(),
             captures: &["owner", "repo"],
             arg_mapping: &[("owner", "owner"), ("repo", "repo")],
             priority: 50,
-            description: "GitHub repository shorthand (owner/repo)",
+            description: "GitHub repository shorthand (lists issues)",
         },
 
         // === Reddit ===
         InputPattern {
             id: "reddit_post_url",
             connector: "reddit",
-            tool: "get_post",
+            tool: "get_post_details",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?reddit\.com/r/(?P<subreddit>[a-zA-Z0-9_]+)/comments/(?P<post_id>[a-z0-9]+)").unwrap(),
             captures: &["subreddit", "post_id"],
             arg_mapping: &[("subreddit", "subreddit"), ("post_id", "post_id")],
@@ -477,7 +481,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "reddit_subreddit_url",
             connector: "reddit",
-            tool: "get_subreddit",
+            tool: "get_subreddit_info",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?reddit\.com/r/(?P<subreddit>[a-zA-Z0-9_]+)/?$").unwrap(),
             captures: &["subreddit"],
             arg_mapping: &[("subreddit", "subreddit")],
@@ -487,7 +491,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "reddit_subreddit_shorthand",
             connector: "reddit",
-            tool: "get_subreddit",
+            tool: "get_subreddit_info",
             pattern: Regex::new(r"^r/(?P<subreddit>[a-zA-Z0-9_]+)$").unwrap(),
             captures: &["subreddit"],
             arg_mapping: &[("subreddit", "subreddit")],
@@ -577,7 +581,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "web_url",
             connector: "web",
-            tool: "fetch",
+            tool: "scrape_url",
             pattern: Regex::new(r"^(?P<url>https?://[^\s]+)$").unwrap(),
             captures: &["url"],
             arg_mapping: &[("url", "url")],
@@ -672,12 +676,12 @@ mod tests {
             .resolve("https://arxiv.org/abs/2301.07041")
             .unwrap();
         assert_eq!(action.connector, "arxiv");
-        assert_eq!(action.arguments.get("id").unwrap(), "2301.07041");
+        assert_eq!(action.arguments.get("paper_id").unwrap(), "2301.07041");
 
         // ArXiv ID with prefix
         let action = resolver.resolve("arXiv:2301.07041").unwrap();
         assert_eq!(action.connector, "arxiv");
-        assert_eq!(action.arguments.get("id").unwrap(), "2301.07041");
+        assert_eq!(action.arguments.get("paper_id").unwrap(), "2301.07041");
     }
 
     #[test]
@@ -705,7 +709,7 @@ mod tests {
             .resolve("https://github.com/rust-lang/rust")
             .unwrap();
         assert_eq!(action.connector, "github");
-        assert_eq!(action.tool, "get_repository");
+        assert_eq!(action.tool, "list_issues");
 
         // Shorthand
         let action = resolver.resolve("rust-lang/rust").unwrap();
