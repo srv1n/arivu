@@ -193,6 +193,62 @@ rm -f ~/.local/bin/arivu
 rm -rf ~/.config/arivu
 ```
 
+## Federated Search
+
+Search multiple data sources simultaneously with a single command using built-in profiles or custom connector lists.
+
+### Built-in Profiles
+
+| Profile | Connectors | Description |
+|---------|------------|-------------|
+| `research` | pubmed, arxiv, semantic-scholar, google-scholar | Academic papers |
+| `enterprise` | slack, atlassian, github | Work documents and code |
+| `social` | reddit, hackernews | Community discussions |
+| `code` | github | Code search |
+| `web` | perplexity, exa, tavily | AI-powered web search |
+| `media` | youtube, wikipedia | Video and reference content |
+
+### Usage
+
+```bash
+# Search using a profile
+arivu search "CRISPR gene therapy" --profile research
+arivu search "kubernetes deployment" -p enterprise
+arivu search "rust async" --profile social
+
+# Custom connector list
+arivu search "machine learning" -s arxiv,pubmed,hackernews
+
+# Merge modes
+arivu search "attention mechanisms" -p research --merge grouped    # Group by source (default)
+arivu search "attention mechanisms" -p research --merge interleaved # Interleave results
+
+# Modify profiles on the fly
+arivu search "CRISPR" -p research --add wikipedia --exclude pubmed
+```
+
+### Output
+
+Results are displayed grouped by source with timing information:
+
+```
+Federated Search: CRISPR gene therapy
+Profile: research
+
+━━ pubmed (10 results)
+   1. CRISPR/Cas9 Immune System as a Tool for Genome Engineering
+      https://pubmed.ncbi.nlm.nih.gov/12345678
+   2. Advances in therapeutic CRISPR/Cas9 genome editing
+      ...
+
+━━ arxiv (10 results)
+   1. Investigating the genomic background of CRISPR-Cas genomes
+      CRISPR-Cas systems are an adaptive immunity that protects prokaryotes...
+   ...
+
+Completed in 1234ms
+```
+
 ## CLI Usage
 
 ```bash
@@ -203,7 +259,7 @@ arivu list
 arivu youtube
 arivu pubmed
 
-# Search
+# Search (single connector)
 arivu search arxiv "attention mechanism"
 arivu search hackernews "rust" --limit 20
 arivu search pubmed "machine learning diagnostics"
@@ -463,17 +519,28 @@ pub trait Connector: Send + Sync {
 
 ## Adding a Connector
 
+See the **[Connector Development Guide](docs/CONNECTOR_DEVELOPMENT.md)** for a complete walkthrough including:
+
+- Step-by-step implementation with code examples
+- Tool design guidelines and naming conventions
+- Authentication patterns
+- Smart Resolver and Federated Search integration
+- Testing and documentation
+
+Quick overview:
 1. Create a module in `arivu_core/src/connectors/`
 2. Implement the `Connector` trait
 3. Add a feature flag to `Cargo.toml`
 4. Register in `build_registry_enabled_only()`
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ## Documentation
 
+- [Connector Development Guide](docs/CONNECTOR_DEVELOPMENT.md) - Complete guide for adding connectors
 - [CLI Usage Guide](arivu_cli/README.md)
 - [Smart Resolver](docs/SMART_RESOLVER.md) - URL/ID auto-detection and routing
+- [Federated Search](docs/FEDERATED_SEARCH.md) - Multi-source search architecture
 - [Authentication Design](docs/AUTH_DESIGN.md) - Auth patterns for downstream apps
 - [Installation Options](INSTALLATION.md)
 - [Connector Documentation](docs/CONNECTORS.md)

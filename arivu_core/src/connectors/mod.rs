@@ -1,3 +1,6 @@
+// Meta-connectors (always available)
+pub mod federated;
+
 #[cfg(feature = "arxiv")]
 pub mod arxiv;
 #[cfg(feature = "atlassian")]

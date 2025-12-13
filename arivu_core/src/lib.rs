@@ -5,6 +5,7 @@ pub mod capabilities; // Keep for config schema
 pub mod connectors;
 pub mod cpu_pool;
 pub mod error;
+pub mod federated;
 pub mod logging;
 pub mod mcp_server;
 pub mod oauth;
