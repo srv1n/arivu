@@ -84,20 +84,47 @@ pub enum Commands {
 
     /// Search for content across connectors
     ///
-    /// A convenience command that calls the search tool of a connector.
-    #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
+    /// Search a single connector or multiple connectors simultaneously using profiles.
+    #[command(after_help = "\x1b[1;33mSingle Connector:\x1b[0m
   arivu search youtube \"rust programming\"
   arivu search hackernews \"async rust\" --limit 5
   arivu search arxiv \"machine learning\"
-  arivu search reddit \"cli tools\" --limit 20")]
+
+\x1b[1;33mFederated Search (Multiple Connectors):\x1b[0m
+  arivu search \"CRISPR gene therapy\" --profile research
+  arivu search \"release notes\" -s slack,confluence,google-drive
+  arivu search \"attention mechanisms\" -p research --merge interleaved
+
+\x1b[1;33mBuilt-in Profiles:\x1b[0m
+  research    - pubmed, arxiv, semantic-scholar, google-scholar
+  enterprise  - slack, atlassian, github
+  social      - reddit, hackernews
+  code        - github
+  web         - perplexity, exa, tavily
+  media       - youtube, wikipedia")]
     Search {
-        /// The connector to use (e.g., youtube, reddit, hackernews)
-        connector: String,
-        /// The search query
-        query: String,
-        /// Maximum number of results
+        /// The connector to use (e.g., youtube, reddit) OR the search query when using --profile/-s
+        connector_or_query: String,
+        /// The search query (optional when using --profile or -s, as first arg becomes the query)
+        query: Option<String>,
+        /// Maximum number of results per source
         #[arg(short, long, default_value_t = 10)]
         limit: u32,
+        /// Search profile for federated search (research, enterprise, social, code, web)
+        #[arg(short, long)]
+        profile: Option<String>,
+        /// Comma-separated list of connectors for ad-hoc federated search
+        #[arg(short = 's', long = "sources")]
+        connectors: Option<String>,
+        /// Merge mode for federated results: grouped (default) or interleaved
+        #[arg(short, long, default_value = "grouped")]
+        merge: String,
+        /// Add connectors to profile (use with --profile)
+        #[arg(long)]
+        add: Option<String>,
+        /// Exclude connectors from profile (use with --profile)
+        #[arg(long)]
+        exclude: Option<String>,
     },
 
     /// Get specific content by ID

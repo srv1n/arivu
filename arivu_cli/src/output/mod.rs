@@ -14,6 +14,11 @@ pub enum OutputData {
         query: String,
         results: Value,
     },
+    FederatedResults {
+        query: String,
+        profile: Option<String>,
+        results: Value,
+    },
     ResourceData {
         connector: String,
         id: String,
@@ -69,6 +74,21 @@ fn format_text_output(data: &OutputData) -> Result<()> {
             results,
         } => {
             println!("Search results for '{}' using {}:", query, connector);
+            println!("{}", serde_json::to_string_pretty(results)?);
+        }
+        OutputData::FederatedResults {
+            query,
+            profile,
+            results,
+        } => {
+            if let Some(profile) = profile {
+                println!(
+                    "Federated search for '{}' using profile '{}':",
+                    query, profile
+                );
+            } else {
+                println!("Federated search for '{}':", query);
+            }
             println!("{}", serde_json::to_string_pretty(results)?);
         }
         OutputData::ResourceData {
@@ -134,6 +154,20 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             println!("# Search Results\n");
             println!("**Connector:** {}\n", connector);
             println!("**Query:** {}\n", query);
+            println!("```json");
+            println!("{}", serde_json::to_string_pretty(results)?);
+            println!("```\n");
+        }
+        OutputData::FederatedResults {
+            query,
+            profile,
+            results,
+        } => {
+            println!("# Federated Search Results\n");
+            println!("**Query:** {}\n", query);
+            if let Some(profile) = profile {
+                println!("**Profile:** {}\n", profile);
+            }
             println!("```json");
             println!("{}", serde_json::to_string_pretty(results)?);
             println!("```\n");

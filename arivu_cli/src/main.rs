@@ -25,7 +25,7 @@ async fn main() {
         .init();
 
     // Pre-process arguments to support shorthand syntax:
-    // "arivu <connector> ..." -> "arivu call <connector> ..."
+    // "arivu <connector> ..." -> "arivu call <connector> ..." or "arivu search <connector> ..."
     let mut args: Vec<String> = std::env::args().collect();
     let built_in_commands = [
         "list",
@@ -58,16 +58,42 @@ async fn main() {
 
         // If it's not a built-in command, assume it's a connector name
         if !built_in_commands.contains(&potential_command.as_str()) {
-            // Check if there is a second positional argument (the tool name)
-            // We scan from the argument *after* the connector
-            let has_tool_arg = args
+            // Find the second positional argument (after the connector)
+            let second_pos_idx = args
                 .iter()
+                .enumerate()
                 .skip(real_idx + 1)
-                .any(|arg| !arg.starts_with('-'));
+                .find(|(_, arg)| !arg.starts_with('-'))
+                .map(|(i, _)| i);
 
-            if has_tool_arg {
-                // Case: `arivu hackernews get_stories` -> `arivu call hackernews get_stories`
-                args.insert(real_idx, "call".to_string());
+            if let Some(second_idx) = second_pos_idx {
+                let second_arg = &args[second_idx];
+
+                // Heuristic: if the second argument looks like a search query rather than a tool name:
+                // - Contains spaces (already expanded by shell from quotes)
+                // - Contains special chars like ?, !, etc.
+                // - Is all lowercase with no underscores (tool names typically use snake_case)
+                // - Doesn't match common tool name patterns (get_*, search_*, list_*, etc.)
+                let looks_like_query = second_arg.contains(' ')
+                    || second_arg.contains('?')
+                    || second_arg.contains('!')
+                    || (!second_arg.contains('_')
+                        && !second_arg.starts_with("get")
+                        && !second_arg.starts_with("search")
+                        && !second_arg.starts_with("list")
+                        && !second_arg.starts_with("fetch")
+                        && !second_arg.starts_with("create")
+                        && !second_arg.starts_with("update")
+                        && !second_arg.starts_with("delete")
+                        && !second_arg.starts_with("test"));
+
+                if looks_like_query {
+                    // Case: `arivu google-scholar "crispr"` -> `arivu search google-scholar "crispr"`
+                    args.insert(real_idx, "search".to_string());
+                } else {
+                    // Case: `arivu hackernews get_stories` -> `arivu call hackernews get_stories`
+                    args.insert(real_idx, "call".to_string());
+                }
             } else {
                 // Case: `arivu hackernews` -> `arivu tools hackernews`
                 args.insert(real_idx, "tools".to_string());
@@ -96,8 +122,28 @@ async fn main() {
         Some(Commands::List) => list::run(&cli).await,
         Some(Commands::Setup { connector }) => setup::run(&cli, connector.as_deref()).await,
         Some(Commands::Search {
-            connector, query, ..
-        }) => search::run(&cli, connector, query).await,
+            connector_or_query,
+            query,
+            limit,
+            profile,
+            connectors,
+            merge,
+            add,
+            exclude,
+        }) => {
+            search::run(
+                &cli,
+                connector_or_query,
+                query.as_deref(),
+                *limit,
+                profile.as_deref(),
+                connectors.as_deref(),
+                merge,
+                add.as_deref(),
+                exclude.as_deref(),
+            )
+            .await
+        }
         Some(Commands::Get { connector, id }) => get::run(&cli, connector, id).await,
         Some(Commands::Fetch { input }) => fetch::run(&cli, input).await,
         Some(Commands::Formats) => fetch::show_formats(&cli).await,

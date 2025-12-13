@@ -26,6 +26,9 @@ pub enum CommandError {
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("Tool error: {0}")]
     ToolError(String),
 
@@ -43,6 +46,9 @@ pub enum CommandError {
 
     #[error("Clipboard error: {0}")]
     Clipboard(String),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, CommandError>;
