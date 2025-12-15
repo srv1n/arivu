@@ -220,7 +220,7 @@ required-features = ["examples"]
 [target.'cfg(target_os = "macos")'.dependencies]
 osakit = { version = "0.2.3", optional = true }
 objc2-health-kit = { version = "0.2", optional = true, features = ["all"] }
-objc2-foundation = { version = "0.2", optional = true, features = [
+objc2-foundation = { version = "0.3", optional = true, features = [
     "NSDate", "NSSet", "NSString", "NSError", "NSPredicate", "NSSortDescriptor",
     "NSArray", "NSObject", "NSValue"
 ] }
