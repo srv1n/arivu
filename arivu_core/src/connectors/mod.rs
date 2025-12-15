@@ -19,6 +19,12 @@ pub mod hackernews;
 pub mod imap;
 #[cfg(feature = "macos-automation")]
 pub mod macos;
+#[cfg(all(target_os = "macos", feature = "macos-spotlight"))]
+pub mod spotlight;
+// EXPERIMENTAL - NOT READY: HealthKit data store not available on macOS
+// See: arivu_core/src/connectors/apple_health/NOT_READY.md
+// #[cfg(all(target_os = "macos", feature = "apple-health"))]
+// pub mod apple_health;
 #[cfg(feature = "pubmed")]
 pub mod pubmed;
 #[cfg(feature = "reddit")]
@@ -51,6 +57,8 @@ pub mod firecrawl_search;
 pub mod gemini_search;
 #[cfg(feature = "openai-search")]
 pub mod openai_search;
+#[cfg(feature = "parallel-search")]
+pub mod parallel_search;
 #[cfg(feature = "perplexity-search")]
 pub mod perplexity_search;
 #[cfg(feature = "serpapi-search")]

@@ -577,6 +577,52 @@ fn build_default_patterns() -> Vec<InputPattern> {
             description: "Discord channel URL (e.g., https://discord.com/channels/12345/67890)",
         },
 
+        // === macOS Spotlight (file search) ===
+        #[cfg(target_os = "macos")]
+        InputPattern {
+            id: "spotlight_file_path",
+            connector: "spotlight",
+            tool: "get_metadata",
+            pattern: Regex::new(r"^file://(?P<path>/[^\s]+)$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 95,
+            description: "Local file path URL (file:///path/to/file)",
+        },
+        #[cfg(target_os = "macos")]
+        InputPattern {
+            id: "spotlight_absolute_path",
+            connector: "spotlight",
+            tool: "get_metadata",
+            pattern: Regex::new(r"^(?P<path>/(?:Users|Volumes|Applications|System|Library|tmp|var|etc|opt|usr)[^\s]*)$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 90,
+            description: "Absolute file path (macOS)",
+        },
+        #[cfg(target_os = "macos")]
+        InputPattern {
+            id: "spotlight_home_path",
+            connector: "spotlight",
+            tool: "get_metadata",
+            pattern: Regex::new(r"^(?P<path>~/[^\s]*)$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 90,
+            description: "Home-relative file path (~/...)",
+        },
+        #[cfg(target_os = "macos")]
+        InputPattern {
+            id: "spotlight_query_prefix",
+            connector: "spotlight",
+            tool: "search_content",
+            pattern: Regex::new(r"^(?:spotlight:|mdfind:)(?P<query>.+)$").unwrap(),
+            captures: &["query"],
+            arg_mapping: &[("query", "query")],
+            priority: 85,
+            description: "Spotlight search query (spotlight:query or mdfind:query)",
+        },
+
         // === Generic Web URLs ===
         InputPattern {
             id: "web_url",
@@ -635,6 +681,10 @@ fn get_pattern_example(pattern_id: &str) -> String {
         "discord_channel_url" => {
             "https://discord.com/channels/123456789012345678/987654321098765432"
         }
+        "spotlight_file_path" => "file:///Users/me/Documents/report.pdf",
+        "spotlight_absolute_path" => "/Users/me/Documents/report.pdf",
+        "spotlight_home_path" => "~/Documents/report.pdf",
+        "spotlight_query_prefix" => "spotlight:CRISPR research",
         "web_url" => "https://example.com/page",
         _ => "",
     }

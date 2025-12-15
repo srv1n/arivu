@@ -5,6 +5,9 @@ use arivu_core::ServerInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod pretty;
+pub use pretty::format_pretty;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum OutputData {
@@ -54,8 +57,7 @@ pub fn format_output(data: &OutputData, format: &OutputFormat) -> Result<()> {
             format_markdown_output(data)?;
         }
         OutputFormat::Pretty => {
-            // Pretty formatting is handled in individual commands
-            format_text_output(data)?;
+            format_pretty_output(data)?;
         }
     }
     Ok(())
@@ -132,6 +134,109 @@ fn format_text_output(data: &OutputData) -> Result<()> {
                     p.connector, p.tool, p.example, p.description
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+fn format_pretty_output(data: &OutputData) -> Result<()> {
+    use owo_colors::OwoColorize;
+
+    match data {
+        OutputData::ConnectorList(connectors) => {
+            println!("{}", "Available Connectors".cyan().bold());
+            println!();
+            let value = serde_json::to_value(connectors)?;
+            println!("{}", format_pretty(&value));
+        }
+        OutputData::SearchResults {
+            connector,
+            query,
+            results,
+        } => {
+            println!(
+                "{} {} {} {}",
+                "Search:".dimmed(),
+                query.cyan().bold(),
+                "via".dimmed(),
+                connector.green()
+            );
+            println!();
+            println!("{}", format_pretty(results));
+        }
+        OutputData::FederatedResults {
+            query,
+            profile,
+            results,
+        } => {
+            if let Some(profile) = profile {
+                println!(
+                    "{} {} {} {}",
+                    "Federated search:".dimmed(),
+                    query.cyan().bold(),
+                    "profile:".dimmed(),
+                    profile.green()
+                );
+            } else {
+                println!("{} {}", "Federated search:".dimmed(), query.cyan().bold());
+            }
+            println!();
+            println!("{}", format_pretty(results));
+        }
+        OutputData::ResourceData {
+            connector,
+            id,
+            data,
+        } => {
+            println!(
+                "{} {} {} {}",
+                "Resource:".dimmed(),
+                id.cyan().bold(),
+                "from".dimmed(),
+                connector.green()
+            );
+            println!();
+            println!("{}", format_pretty(data));
+        }
+        OutputData::ToolsList { connector, tools } => {
+            if let Some(connector) = connector {
+                println!("{} {}", "Tools for".dimmed(), connector.green().bold());
+            } else {
+                println!("{}", "Available Tools".cyan().bold());
+            }
+            println!();
+            println!("{}", format_pretty(tools));
+        }
+        OutputData::CallResult {
+            connector,
+            tool,
+            result,
+        } => {
+            println!(
+                "{} {}.{}",
+                "Result:".dimmed(),
+                connector.green(),
+                tool.cyan().bold()
+            );
+            println!();
+            println!("{}", format_pretty(result));
+        }
+        OutputData::ToolResult(result) => {
+            println!("{}", format_pretty(result));
+        }
+        OutputData::ConfigInfo(config) => {
+            println!("{}", "Configuration".cyan().bold());
+            println!();
+            println!("{}", format_pretty(config));
+        }
+        OutputData::ErrorMessage(msg) => {
+            eprintln!("{} {}", "Error:".red().bold(), msg);
+        }
+        OutputData::Patterns(patterns) => {
+            println!("{}", "Supported Patterns".cyan().bold());
+            println!();
+            let value = serde_json::to_value(patterns)?;
+            println!("{}", format_pretty(&value));
         }
     }
     Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "arivu_core"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "Core library for Arivu - unified data source connectors"
 license = "MIT OR Apache-2.0"
@@ -80,9 +80,12 @@ all-connectors = [
     "slack", "github", "atlassian",
     "openai-search", "anthropic-search", "gemini-search", "perplexity-search",
     "xai-search", "exa-search", "firecrawl-search", "serper-search", "tavily-search", "serpapi-search",
-    "macos-automation",
+    "parallel-search",
+    "macos-automation", "macos-spotlight",
     "biorxiv", "rss", "discord", "google-scholar"
 ]
+# NOTE: "apple-health" is excluded - HealthKit APIs exist on macOS 14+ but
+# isHealthDataAvailable() returns false (no Health app/data store on Mac yet)
 
 # Feature-to-dependency wiring per connector
 biorxiv = []
@@ -108,7 +111,15 @@ web-lite = ["dep:scraper", "dep:htmd", "dep:meta_fetcher"]
 x-lite = ["dep:agent-twitter-client"]
 imap = ["dep:imap", "dep:imap-proto", "dep:mailparse"]
 macos-automation = ["dep:osakit"]
+macos-spotlight = []  # Uses mdfind CLI, no extra dependencies needed
 slack = []
+
+# EXPERIMENTAL - NOT READY FOR USE
+# apple-health: HealthKit framework exists on macOS 14+ but the Health data store
+# is not available (isHealthDataAvailable() returns false). Code is preserved in
+# arivu_core/src/connectors/apple_health/ for future use when Apple enables this.
+# See: arivu_core/src/connectors/apple_health/NOT_READY.md
+# apple-health = ["dep:objc2-health-kit", "dep:objc2-foundation", "dep:objc2", "dep:block2"]
 github = ["dep:octocrab"]
 atlassian = []
 
@@ -123,6 +134,7 @@ firecrawl-search = []
 serper-search = []
 tavily-search = []
 serpapi-search = []
+parallel-search = []
 
 # New Phase 1 connectors
 microsoft-graph = ["dep:graph-rs-sdk"]
@@ -207,3 +219,10 @@ required-features = ["examples"]
 # Target-specific optional deps
 [target.'cfg(target_os = "macos")'.dependencies]
 osakit = { version = "0.2.3", optional = true }
+objc2-health-kit = { version = "0.2", optional = true, features = ["all"] }
+objc2-foundation = { version = "0.2", optional = true, features = [
+    "NSDate", "NSSet", "NSString", "NSError", "NSPredicate", "NSSortDescriptor",
+    "NSArray", "NSObject", "NSValue"
+] }
+objc2 = { version = "0.5", optional = true }
+block2 = { version = "0.5", optional = true }

@@ -1,6 +1,6 @@
 use crate::cli::Cli;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
-use crate::output::{format_output, OutputData};
+use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::federated::{FederatedSearch, MergeMode, ProfileStore, SearchProfile};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam, ProviderRegistry};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -267,80 +267,98 @@ fn format_pretty_federated_results(
 ) -> Result<()> {
     use arivu_core::federated::FederatedResults;
 
+    // Header
     println!(
         "{} {}",
         "Federated Search:".bold().cyan(),
         result.query.yellow()
     );
     if let Some(ref profile) = result.profile {
-        println!("{} {}", "Profile:".bold(), profile.cyan());
+        println!("{} {}", "Profile:".dimmed(), profile.cyan());
     }
     println!();
+
+    let width = terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(80);
 
     match &result.results {
         FederatedResults::Grouped { sources } => {
             for source in sources {
+                // Section header with horizontal rule
+                let header = format!("{} ({} results)", source.source, source.count);
+                let line_len = width.saturating_sub(header.len() + 6).min(60);
                 println!(
                     "{} {} {}",
-                    "━━".cyan(),
-                    source.source.bold().green(),
-                    format!("({} results)", source.count).dimmed()
+                    "──".cyan(),
+                    header.green().bold(),
+                    "─".repeat(line_len).cyan()
                 );
+                println!();
 
                 if source.results.is_empty() {
                     println!("   {}", "No results".dimmed());
                 } else {
                     for (i, r) in source.results.iter().enumerate() {
+                        // Card: Number + Title
                         println!(
-                            "   {} {}",
-                            format!("{}.", i + 1).cyan().bold(),
-                            r.title.bold()
+                            " {:>3}. {}",
+                            (i + 1).to_string().cyan().bold(),
+                            truncate_text(&r.title, 70).bold()
                         );
 
+                        // URL on its own line
                         if let Some(ref url) = r.url {
                             println!("      {}", url.blue());
                         }
 
+                        // Snippet - cleaned and truncated
                         if let Some(ref snippet) = r.snippet {
-                            let truncated = if snippet.len() > 150 {
-                                format!("{}...", &snippet[..150])
-                            } else {
-                                snippet.clone()
-                            };
-                            println!("      {}", truncated.dimmed());
+                            let clean = snippet.replace('\n', " ").replace("  ", " ");
+                            let truncated = truncate_text(&clean, 100);
+                            if !truncated.is_empty() {
+                                println!("      {}", truncated.dimmed());
+                            }
                         }
+
+                        // Breathing room between cards
+                        println!();
                     }
                 }
-                println!();
             }
         }
         FederatedResults::Interleaved { results } => {
+            let header = format!("Results ({} total, interleaved)", results.len());
+            let line_len = width.saturating_sub(header.len() + 6).min(60);
             println!(
-                "{} {}",
-                "Results:".bold(),
-                format!("({} total, interleaved)", results.len()).dimmed()
+                "{} {} {}",
+                "──".cyan(),
+                header.green().bold(),
+                "─".repeat(line_len).cyan()
             );
             println!();
 
             for (i, r) in results.iter().enumerate() {
+                // Card: Number + Title + Source tag
                 println!(
-                    "{} {} {}",
-                    format!("{}.", i + 1).cyan().bold(),
-                    r.title.bold(),
-                    format!("({})", r.source).dimmed()
+                    " {:>3}. {} {}",
+                    (i + 1).to_string().cyan().bold(),
+                    truncate_text(&r.title, 60).bold(),
+                    format!("[{}]", r.source).dimmed()
                 );
 
+                // URL
                 if let Some(ref url) = r.url {
-                    println!("   {}", url.blue());
+                    println!("      {}", url.blue());
                 }
 
+                // Snippet
                 if let Some(ref snippet) = r.snippet {
-                    let truncated = if snippet.len() > 150 {
-                        format!("{}...", &snippet[..150])
-                    } else {
-                        snippet.clone()
-                    };
-                    println!("   {}", truncated.dimmed());
+                    let clean = snippet.replace('\n', " ").replace("  ", " ");
+                    let truncated = truncate_text(&clean, 100);
+                    if !truncated.is_empty() {
+                        println!("      {}", truncated.dimmed());
+                    }
                 }
                 println!();
             }
@@ -349,21 +367,22 @@ fn format_pretty_federated_results(
 
     // Show errors if any
     if result.partial && !result.errors.is_empty() {
-        println!("{}", "Partial results. Some sources failed:".yellow());
+        println!();
+        println!("{}", "⚠ Partial results - some sources failed:".yellow());
         for err in &result.errors {
             let timeout_marker = if err.is_timeout { " (timeout)" } else { "" };
             println!(
-                "  {} {}: {}{}",
-                "⚠".yellow(),
+                "   {} {}: {}{}",
+                "•".dimmed(),
                 err.source.yellow(),
-                err.error,
-                timeout_marker
+                err.error.dimmed(),
+                timeout_marker.dimmed()
             );
         }
-        println!();
     }
 
-    // Show timing
+    // Footer with timing
+    println!();
     if let Some(duration) = result.duration_ms {
         println!("{}", format!("Completed in {}ms", duration).dimmed());
     }
@@ -371,75 +390,26 @@ fn format_pretty_federated_results(
     Ok(())
 }
 
+/// Truncate text to max length, adding ellipsis if needed
+fn truncate_text(s: &str, max_len: usize) -> String {
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.chars().count() <= max_len {
+        first_line.to_string()
+    } else {
+        let truncated: String = first_line.chars().take(max_len - 3).collect();
+        format!("{}...", truncated)
+    }
+}
+
 fn format_pretty_search_results(connector: &str, query: &str, results: &Value) -> Result<()> {
-    println!("{} {}", "Search Results:".bold().cyan(), query.yellow());
-    println!("{} {}", "Connector:".bold(), connector.cyan());
+    // Header
+    println!("{} {}", "Search:".bold().cyan(), query.yellow());
+    println!("{} {}", "Source:".dimmed(), connector.green());
     println!();
 
-    // Handle different result formats based on connector
-    match connector {
-        "youtube" => format_youtube_results(results)?,
-        "reddit" => format_reddit_results(results)?,
-        "hackernews" => format_hackernews_results(results)?,
-        "wikipedia" => format_wikipedia_results(results)?,
-        _ => {
-            // Generic formatting
-            println!("{}", serde_json::to_string_pretty(results)?);
-        }
-    }
+    // Use the unified pretty formatter for all connectors
+    println!("{}", format_pretty(results));
 
-    Ok(())
-}
-
-fn format_youtube_results(results: &Value) -> Result<()> {
-    if let Some(videos) = results.get("videos").and_then(|v| v.as_array()) {
-        for (i, video) in videos.iter().enumerate() {
-            if i > 0 {
-                println!();
-            }
-
-            if let (Some(title), Some(url)) = (video.get("title"), video.get("url")) {
-                println!(
-                    "{} {}",
-                    format!("{}.", i + 1).cyan().bold(),
-                    title.as_str().unwrap_or("").bold()
-                );
-                println!("   {}", url.as_str().unwrap_or("").blue());
-
-                if let Some(desc) = video.get("description") {
-                    let desc_str = desc.as_str().unwrap_or("");
-                    if !desc_str.is_empty() {
-                        let truncated = if desc_str.len() > 100 {
-                            format!("{}...", &desc_str[..100])
-                        } else {
-                            desc_str.to_string()
-                        };
-                        println!("   {}", truncated.dimmed());
-                    }
-                }
-            }
-        }
-    } else {
-        println!("{}", serde_json::to_string_pretty(results)?);
-    }
-    Ok(())
-}
-
-fn format_reddit_results(results: &Value) -> Result<()> {
-    // TODO: Implement Reddit-specific formatting
-    println!("{}", serde_json::to_string_pretty(results)?);
-    Ok(())
-}
-
-fn format_hackernews_results(results: &Value) -> Result<()> {
-    // TODO: Implement HackerNews-specific formatting
-    println!("{}", serde_json::to_string_pretty(results)?);
-    Ok(())
-}
-
-fn format_wikipedia_results(results: &Value) -> Result<()> {
-    // TODO: Implement Wikipedia-specific formatting
-    println!("{}", serde_json::to_string_pretty(results)?);
     Ok(())
 }
 

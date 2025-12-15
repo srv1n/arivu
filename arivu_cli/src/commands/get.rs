@@ -1,6 +1,6 @@
 use crate::cli::Cli;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
-use crate::output::{format_output, OutputData};
+use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam, ProviderRegistry};
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
@@ -108,7 +108,8 @@ fn format_pretty_resource_data(connector: &str, id: &str, data: &Value) -> Resul
         "arxiv" => format_arxiv_data(data)?,
         "pubmed" => format_pubmed_data(data)?,
         _ => {
-            println!("{}", serde_json::to_string_pretty(data)?);
+            // Generic smart formatting for other connectors
+            println!("{}", format_pretty(data));
         }
     }
 

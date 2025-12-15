@@ -99,12 +99,14 @@ pub trait Connector: Send + Sync {
 
 pub struct ProviderRegistry {
     pub providers: HashMap<String, Arc<tokio::sync::Mutex<Box<dyn Connector>>>>,
+    pub aliases: HashMap<String, String>, // alias -> canonical name
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
         ProviderRegistry {
             providers: HashMap::new(),
+            aliases: HashMap::new(),
         }
     }
     pub fn register_provider(&mut self, provider: Box<dyn Connector>) {
@@ -113,8 +115,22 @@ impl ProviderRegistry {
             Arc::new(tokio::sync::Mutex::new(provider)),
         );
     }
+
+    pub fn register_alias(&mut self, alias: &str, canonical_name: &str) {
+        self.aliases
+            .insert(alias.to_string(), canonical_name.to_string());
+    }
+
     pub fn get_provider(&self, name: &str) -> Option<&Arc<tokio::sync::Mutex<Box<dyn Connector>>>> {
-        self.providers.get(name)
+        // First try direct lookup
+        if let Some(provider) = self.providers.get(name) {
+            return Some(provider);
+        }
+        // Then try alias lookup
+        if let Some(canonical_name) = self.aliases.get(name) {
+            return self.providers.get(canonical_name);
+        }
+        None
     }
     pub fn get_provider_mut(&mut self, _name: &str) -> Option<&mut Box<dyn Connector>> {
         // You usually won't need get_provider_mut with Arc.  Remove it if not needed.
@@ -351,6 +367,20 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
         registry.register_provider(Box::new(connector));
     }
 
+    #[cfg(all(target_os = "macos", feature = "macos-spotlight"))]
+    {
+        let connector = connectors::spotlight::SpotlightConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
+    // EXPERIMENTAL - NOT READY: HealthKit data store not available on macOS
+    // See: arivu_core/src/connectors/apple_health/NOT_READY.md
+    // #[cfg(all(target_os = "macos", feature = "apple-health"))]
+    // {
+    //     let connector = connectors::apple_health::AppleHealthConnector::new();
+    //     registry.register_provider(Box::new(connector));
+    // }
+
     #[cfg(feature = "slack")]
     {
         if let Ok(connector) =
@@ -427,6 +457,7 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
             connectors::exa_search::ExaSearchConnector::new(auth::AuthDetails::new()).await
         {
             registry.register_provider(Box::new(connector));
+            registry.register_alias("exa-search", "exa");
         }
     }
     #[cfg(feature = "firecrawl-search")]
@@ -452,12 +483,22 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
             connectors::tavily_search::TavilySearchConnector::new(auth::AuthDetails::new()).await
         {
             registry.register_provider(Box::new(connector));
+            registry.register_alias("tavily", "tavily-search");
         }
     }
     #[cfg(feature = "serpapi-search")]
     {
         if let Ok(connector) =
             connectors::serpapi_search::SerpapiSearchConnector::new(auth::AuthDetails::new()).await
+        {
+            registry.register_provider(Box::new(connector));
+        }
+    }
+    #[cfg(feature = "parallel-search")]
+    {
+        if let Ok(connector) =
+            connectors::parallel_search::ParallelSearchConnector::new(auth::AuthDetails::new())
+                .await
         {
             registry.register_provider(Box::new(connector));
         }

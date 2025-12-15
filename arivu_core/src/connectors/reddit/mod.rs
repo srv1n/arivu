@@ -403,6 +403,11 @@ impl Connector for RedditConnector {
                 let username = args.get("username").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'username' parameter".to_string()),
                 )?;
+                // Strip "u/", "/u/", or leading "/" from username
+                let username = username
+                    .strip_prefix("/u/")
+                    .or_else(|| username.strip_prefix("u/"))
+                    .unwrap_or(username);
 
                 let user = User::new(username);
                 let about = user
@@ -429,6 +434,8 @@ impl Connector for RedditConnector {
                 let subreddit_name = args.get("subreddit").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'subreddit' parameter".to_string()),
                 )?;
+                // Strip "r/" prefix if present
+                let subreddit_name = subreddit_name.strip_prefix("r/").unwrap_or(subreddit_name);
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
 
                 let subreddit = Subreddit::new(subreddit_name);
@@ -460,6 +467,8 @@ impl Connector for RedditConnector {
                 let subreddit_name = args.get("subreddit").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'subreddit' parameter".to_string()),
                 )?;
+                // Strip "r/" prefix if present
+                let subreddit_name = subreddit_name.strip_prefix("r/").unwrap_or(subreddit_name);
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
 
                 let subreddit = Subreddit::new(subreddit_name);
@@ -491,6 +500,8 @@ impl Connector for RedditConnector {
                 let subreddit_name = args.get("subreddit").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'subreddit' parameter".to_string()),
                 )?;
+                // Strip "r/" prefix if present
+                let subreddit_name = subreddit_name.strip_prefix("r/").unwrap_or(subreddit_name);
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
 
                 let subreddit = Subreddit::new(subreddit_name);
@@ -522,6 +533,8 @@ impl Connector for RedditConnector {
                 let subreddit_name = args.get("subreddit").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'subreddit' parameter".to_string()),
                 )?;
+                // Strip "r/" prefix if present
+                let subreddit_name = subreddit_name.strip_prefix("r/").unwrap_or(subreddit_name);
 
                 let subreddit = Subreddit::new(subreddit_name);
                 let about = subreddit.about().await.map_err(|e| {
@@ -555,6 +568,11 @@ impl Connector for RedditConnector {
                 // Add author filter if provided
                 if let Some(author) = args.get("author").and_then(|v| v.as_str()) {
                     if !author.is_empty() {
+                        // Strip "u/", "/u/" prefix if present
+                        let author = author
+                            .strip_prefix("/u/")
+                            .or_else(|| author.strip_prefix("u/"))
+                            .unwrap_or(author);
                         search_query = format!("{} author:{}", search_query, author);
                     }
                 }
@@ -562,7 +580,9 @@ impl Connector for RedditConnector {
                 // Add subreddit filter if provided
                 if let Some(subreddit) = args.get("subreddit").and_then(|v| v.as_str()) {
                     if !subreddit.is_empty() {
-                        search_query = format!("{} subreddit:{}", search_query, subreddit);
+                        // Strip "r/" prefix if present
+                        let subreddit_name = subreddit.strip_prefix("r/").unwrap_or(subreddit);
+                        search_query = format!("{} subreddit:{}", search_query, subreddit_name);
                     }
                 }
 

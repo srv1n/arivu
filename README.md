@@ -69,6 +69,7 @@ These connectors query AI-powered or traditional search APIs.
 | <img src="https://www.google.com/s2/favicons?domain=anthropic.com&sz=16" width="16" height="16" /> Anthropic | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=openai.com&sz=16" width="16" height="16" /> OpenAI | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=deepmind.google&sz=16" width="16" height="16" /> Gemini | API Key |
+| <img src="https://www.google.com/s2/favicons?domain=parallel.ai&sz=16" width="16" height="16" /> Parallel AI | API Key |
 | <img src="https://www.google.com/s2/favicons?domain=x.ai&sz=16" width="16" height="16" /> xAI | API Key |
 
 ### macOS Native
@@ -76,6 +77,7 @@ These connectors query AI-powered or traditional search APIs.
 | Connector | Description |
 |-----------|-------------|
 | <img src="https://www.google.com/s2/favicons?domain=apple.com&sz=16" width="16" height="16" /> macOS Automation | Control Mail, Calendar, Safari via JXA (requires permissions) |
+| <img src="https://www.google.com/s2/favicons?domain=apple.com&sz=16" width="16" height="16" /> Spotlight | Search files by content, name, type, or metadata (macOS only) |
 
 ## Quick Start
 
@@ -118,6 +120,11 @@ arivu fetch https://news.ycombinator.com/item?id=38500000
 arivu fetch hn:38500000
 arivu fetch r/rust
 arivu fetch @elonmusk
+
+# Local files (macOS Spotlight)
+arivu fetch ~/Documents/report.pdf
+arivu fetch /Users/me/Downloads/data.csv
+arivu fetch "spotlight:machine learning"
 
 # Any URL falls back to web scraper
 arivu fetch https://example.com/some/page

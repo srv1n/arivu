@@ -1,6 +1,6 @@
 use crate::cli::Cli;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
-use crate::output::{format_output, OutputData};
+use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam};
 use owo_colors::OwoColorize;
 use serde_json::{json, Map, Value};
@@ -82,18 +82,59 @@ pub async fn run(
             }
         }
 
-        if params.len() > param_names.len() {
+        // Separate positional args from named args (after --)
+        // Format: positional_args... -- --name value --name2 value2
+        let mut positional_args: Vec<&String> = Vec::new();
+        let mut named_args: Vec<(&String, &String)> = Vec::new();
+        let mut in_named_section = false;
+        let mut i = 0;
+
+        while i < params.len() {
+            let param = &params[i];
+            if param == "--" {
+                in_named_section = true;
+                i += 1;
+                continue;
+            }
+
+            if in_named_section {
+                // Parse --name value pairs
+                if param.starts_with("--") && i + 1 < params.len() {
+                    named_args.push((&params[i], &params[i + 1]));
+                    i += 2;
+                    continue;
+                }
+                // Also support -n value (single dash)
+                if param.starts_with('-')
+                    && !param.starts_with("--")
+                    && param.len() > 1
+                    && i + 1 < params.len()
+                {
+                    named_args.push((&params[i], &params[i + 1]));
+                    i += 2;
+                    continue;
+                }
+            }
+
+            if !in_named_section {
+                positional_args.push(param);
+            }
+            i += 1;
+        }
+
+        // Check positional arg count
+        if positional_args.len() > param_names.len() {
             return Err(CommandError::InvalidConfig(format!(
                 "Too many arguments provided. Tool '{}' accepts at most {} positional arguments ({}), but got {}.",
                 tool,
                 param_names.len(),
                 param_names.join(", "),
-                params.len()
+                positional_args.len()
             )));
         }
 
-        // Map positions to names
-        for (i, param_value) in params.iter().enumerate() {
+        // Map positional args to names
+        for (i, param_value) in positional_args.iter().enumerate() {
             let param_name = &param_names[i];
             // Try to guess type? For now, treat everything as string unless it looks like a number/bool
             let value = if let Ok(num) = param_value.parse::<i64>() {
@@ -104,6 +145,21 @@ pub async fn run(
                 json!(param_value)
             };
             args_map.insert(param_name.clone(), value);
+        }
+
+        // Map named args
+        for (flag, value) in named_args {
+            let name = flag.trim_start_matches('-');
+            // Convert kebab-case to snake_case for parameter names
+            let normalized_name = name.replace('-', "_");
+            let typed_value = if let Ok(num) = value.parse::<i64>() {
+                json!(num)
+            } else if let Ok(b) = value.parse::<bool>() {
+                json!(b)
+            } else {
+                json!(value)
+            };
+            args_map.insert(normalized_name, typed_value);
         }
     }
 
@@ -149,7 +205,8 @@ pub async fn run(
                 connector.yellow(),
                 tool.cyan()
             );
-            println!("{}", serde_json::to_string_pretty(&payload)?);
+            println!();
+            println!("{}", format_pretty(&payload));
         }
         _ => {
             let data = OutputData::CallResult {

@@ -1,6 +1,6 @@
 [package]
 name = "arivu_cli"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "CLI interface for Arivu - unified data access tool"
 license = "MIT OR Apache-2.0"
@@ -26,6 +26,7 @@ terminal_size = "0.4"
 arboard = { version = "3.4", default-features = false }
 textwrap = { version = "0.16", default-features = false, features = ["smawk"] }
 serde_yaml = "0.9.34"
+colored_json = "5.0"
 rpassword = "7.3"
 
 # Async runtime - only features needed for CLI
@@ -90,5 +91,11 @@ google-people = ["arivu_core/google-people"]
 
 # LLM-first composite tools (enable extra macro tools)
 llm-macros = ["arivu_core/llm-macros"]
+
+# macOS-specific connectors
+macos-automation = ["arivu_core/macos-automation"]
+macos-spotlight = ["arivu_core/macos-spotlight"]
+# EXPERIMENTAL - NOT READY: See arivu_core/src/connectors/apple_health/NOT_READY.md
+# apple-health = ["arivu_core/apple-health"]
 
 tui = ["ratatui", "crossterm"]

@@ -66,7 +66,10 @@ impl Connector for XConnector {
     }
 
     async fn set_auth_details(&mut self, details: AuthDetails) -> Result<(), ConnectorError> {
-        // self.validate_auth_details(&details)?;
+        // If no auth details provided, skip authentication (allows listing tools without auth)
+        if details.is_empty() {
+            return Ok(());
+        }
 
         // Check for browser-based cookie extraction
         if let Some(browser) = details.get("browser") {
@@ -568,6 +571,8 @@ impl Connector for XConnector {
                     .ok_or(ConnectorError::InvalidParams(
                         "Missing 'username' argument".to_string(),
                     ))?;
+                // Strip "@" prefix if present
+                let username = username.strip_prefix('@').unwrap_or(username);
 
                 let profile: Profile = self
                     .scraper
@@ -599,6 +604,8 @@ impl Connector for XConnector {
                     .ok_or(ConnectorError::InvalidParams(
                         "Missing 'username' argument".to_string(),
                     ))?;
+                // Strip "@" prefix if present
+                let username = username.strip_prefix('@').unwrap_or(username);
                 let limit = args["limit"].as_i64().unwrap_or(20) as i32;
                 let cursor = args["cursor"].as_str().map(String::from);
 
@@ -648,6 +655,8 @@ impl Connector for XConnector {
                     .ok_or(ConnectorError::InvalidParams(
                         "Missing 'username' argument".to_string(),
                     ))?;
+                // Strip "@" prefix if present
+                let username = username.strip_prefix('@').unwrap_or(username);
                 let limit = args["limit"].as_i64().unwrap_or(20) as i32;
                 let cursor = args["cursor"].as_str();
                 let tweets: V2QueryTweetsResponse = self

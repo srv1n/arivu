@@ -19,6 +19,7 @@ struct ConnectorSetupInfo {
     env_vars: &'static [(&'static str, &'static str)], // (env_var, description)
     required_fields: &'static [FieldInfo],
     instructions: Option<SetupInstructions>,
+    aliases: &'static [&'static str], // Alternative names for this connector
 }
 
 struct FieldInfo {
@@ -58,6 +59,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "hackernews",
@@ -67,6 +69,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "arxiv",
@@ -76,6 +79,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "wikipedia",
@@ -85,6 +89,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "pubmed",
@@ -94,6 +99,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "biorxiv",
@@ -103,6 +109,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "rss",
@@ -112,6 +119,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "google-scholar",
@@ -121,6 +129,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     // === API Key Auth ===
     ConnectorSetupInfo {
@@ -144,6 +153,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Ensure 'Message Content Intent' is enabled",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "slack",
@@ -167,6 +177,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Copy the 'Bot User OAuth Token' (starts with xoxb-)",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "github",
@@ -188,6 +199,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Generate and copy the token",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "brave_search",
@@ -209,6 +221,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Create a new API key",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "openai-search",
@@ -230,6 +243,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Create a new secret key",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "anthropic-search",
@@ -251,6 +265,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Create a new key",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "perplexity-search",
@@ -272,11 +287,12 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Generate a new API key",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
-        name: "exa-search",
-        display_name: "Exa Search",
-        description: "Neural web search",
+        name: "exa",
+        display_name: "Exa",
+        description: "Advanced AI search with neural search, similarity finding, content extraction, and answer generation",
         auth_type: AuthType::ApiKey,
         env_vars: &[("EXA_API_KEY", "API Key")],
         required_fields: &[FieldInfo {
@@ -293,6 +309,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Create a new key",
             ],
         }),
+        aliases: &["exa-search"],
     },
     ConnectorSetupInfo {
         name: "tavily-search",
@@ -314,6 +331,29 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Copy your API key",
             ],
         }),
+        aliases: &["tavily"],
+    },
+    ConnectorSetupInfo {
+        name: "parallel-search",
+        display_name: "Parallel Search",
+        description: "Advanced parallel web search",
+        auth_type: AuthType::ApiKey,
+        env_vars: &[("PARALLEL_API_KEY", "API Key")],
+        required_fields: &[FieldInfo {
+            name: "api_key",
+            label: "API Key",
+            is_secret: true,
+            hint: None,
+        }],
+        instructions: Some(SetupInstructions {
+            obtain_url: "https://docs.parallel.ai",
+            steps: &[
+                "Sign up for a Parallel AI account",
+                "Navigate to the dashboard",
+                "Create a new API key",
+            ],
+        }),
+        aliases: &["parallel"],
     },
     // === Multiple Fields ===
     ConnectorSetupInfo {
@@ -348,6 +388,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Note the client ID (under app name) and secret",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "google_search",
@@ -381,6 +422,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Create an API key in Google Cloud Console > Credentials",
             ],
         }),
+        aliases: &[],
     },
     // === Browser Cookies ===
     ConnectorSetupInfo {
@@ -404,6 +446,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Arivu will extract your session cookies automatically",
             ],
         }),
+        aliases: &[],
     },
     // === OAuth ===
     ConnectorSetupInfo {
@@ -424,6 +467,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Or use the device authorization flow below (recommended)",
             ],
         }),
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "google-gmail",
@@ -437,6 +481,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "google-calendar",
@@ -450,6 +495,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         env_vars: &[],
         required_fields: &[],
         instructions: None,
+        aliases: &[],
     },
     ConnectorSetupInfo {
         name: "microsoft-graph",
@@ -470,6 +516,7 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
                 "Or use the device authorization flow below (recommended)",
             ],
         }),
+        aliases: &[],
     },
 ];
 
@@ -555,7 +602,9 @@ async fn run_setup_wizard(_cli: &Cli) -> Result<()> {
     }
 
     // Find the connector
-    let info = CONNECTORS.iter().find(|c| c.name == connector_name);
+    let info = CONNECTORS.iter().find(|c| {
+        c.name == connector_name.as_str() || c.aliases.contains(&connector_name.as_str())
+    });
 
     if let Some(info) = info {
         configure_connector(info).await?;
@@ -575,7 +624,9 @@ async fn run_setup_wizard(_cli: &Cli) -> Result<()> {
 }
 
 async fn setup_connector(_cli: &Cli, connector_name: &str) -> Result<()> {
-    let info = CONNECTORS.iter().find(|c| c.name == connector_name);
+    let info = CONNECTORS
+        .iter()
+        .find(|c| c.name == connector_name || c.aliases.contains(&connector_name));
 
     if let Some(info) = info {
         println!();
