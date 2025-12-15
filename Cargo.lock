@@ -209,12 +209,11 @@ checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
 
 [[package]]
 name = "arivu_cli"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "arboard",
  "arivu_core",
  "clap",
- "colored_json",
  "comfy-table",
  "crossterm 0.29.0",
  "indicatif",
@@ -234,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "arivu_core"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "agent-twitter-client",
  "async-trait",
@@ -293,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "arivu_mcp"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "arivu_core",
  "rmcp",
@@ -1071,17 +1070,6 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
-
-[[package]]
-name = "colored_json"
-version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e35980a1b846f8e3e359fd18099172a0857140ba9230affc4f71348081e039b6"
-dependencies = [
- "serde",
- "serde_json",
- "yansi",
-]
 
 [[package]]
 name = "comfy-table"
