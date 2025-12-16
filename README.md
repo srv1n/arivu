@@ -258,35 +258,141 @@ Completed in 1234ms
 
 ## CLI Usage
 
+### Connector Subcommands (Recommended)
+
+Each connector has its own subcommand with proper CLI flags:
+
+```bash
+# Local filesystem - text extraction from PDF, EPUB, DOCX, HTML, code
+arivu localfs list-files --path ~/Documents --recursive --extensions pdf,md
+arivu localfs extract-text --path ~/paper.pdf
+arivu localfs structure --path ~/book.epub
+arivu localfs section --path ~/doc.pdf --section page:5
+arivu localfs search --path ~/code.rs --query "async fn"
+
+# YouTube
+arivu youtube search --query "rust programming" --limit 10
+arivu youtube video --id dQw4w9WgXcQ
+arivu youtube transcript --id dQw4w9WgXcQ
+
+# Hacker News
+arivu hackernews top --limit 20
+arivu hackernews search --query "rust" --limit 10
+arivu hackernews story --id 38500000
+
+# arXiv
+arivu arxiv search --query "transformer architecture" --limit 10
+arivu arxiv paper --id 2301.07041
+
+# GitHub
+arivu github search-repos --query "rust cli"
+arivu github search-code --query "async fn" --repo tokio-rs/tokio
+arivu github issues --repo rust-lang/rust --state open
+
+# Reddit
+arivu reddit search --query "rust" --subreddit programming
+arivu reddit hot --subreddit rust --limit 20
+
+# AI-powered search
+arivu perplexity-search search --query "best practices for rust async"
+arivu exa search --query "rust async programming" --num-results 10
+arivu openai-search search --query "machine learning"
+arivu anthropic-search search --query "AI safety"
+
+# Google services (requires OAuth setup)
+arivu google-calendar list-events
+arivu google-drive list-files --query "project report"
+arivu google-gmail search --query "from:boss@company.com"
+
+# Microsoft 365 (requires OAuth setup)
+arivu microsoft-graph list-drive-items
+arivu microsoft-graph list-mail --filter "isRead eq false"
+
+# Academic research
+arivu pubmed search --query "CRISPR gene therapy" --limit 10
+arivu semantic-scholar search --query "attention mechanism"
+arivu biorxiv search --query "protein folding"
+
+# Use --help on any subcommand for all options
+arivu localfs list-files --help
+arivu hackernews --help
+```
+
+### Generic Commands
+
 ```bash
 # List available connectors
 arivu list
 
 # Show tools for a connector
-arivu youtube
-arivu pubmed
+arivu tools youtube
+arivu tools pubmed
+
+# Smart fetch - auto-detects URL/ID type
+arivu fetch https://arxiv.org/abs/2301.07041
+arivu fetch https://news.ycombinator.com/item?id=38500000
+arivu fetch hn:38500000
 
 # Search (single connector)
 arivu search arxiv "attention mechanism"
 arivu search hackernews "rust" --limit 20
-arivu search pubmed "machine learning diagnostics"
 
 # Get specific content
 arivu get hackernews 12345678
 arivu get youtube dQw4w9WgXcQ
-arivu get wikipedia "Neural_network"
 
-# Call tools directly
-arivu github search_repos --args '{"query":"language:rust stars:>1000"}'
-arivu slack list_channels
+# Call tools directly (JSON args - for advanced use)
+arivu call github search_repos --args '{"query":"language:rust stars:>1000"}'
+arivu call slack list_channels
 
 # Output formats
-arivu search arxiv "llm" --output json | jq '.results[0]'
+arivu --output json arxiv search --query "llm" | jq '.results[0]'
 
 # Copy output to clipboard
 arivu --copy fetch hn:38500000
-arivu -c search arxiv "attention mechanism"
 ```
+
+### All Connector Subcommands
+
+| Connector | Aliases | Description |
+|-----------|---------|-------------|
+| `localfs` | `fs`, `file` | Local filesystem text extraction |
+| `youtube` | `yt` | Video metadata, transcripts, search |
+| `hackernews` | `hn` | Stories, comments, search |
+| `arxiv` | | Academic preprints |
+| `github` | `gh` | Repositories, issues, PRs, code |
+| `reddit` | | Posts, comments, subreddits |
+| `web` | | Web page scraping |
+| `wikipedia` | `wiki` | Article search and retrieval |
+| `pubmed` | | Medical literature |
+| `semantic-scholar` | `scholar` | Academic paper search |
+| `slack` | | Workspace messages, channels |
+| `discord` | | Servers, channels, messages |
+| `x` | `twitter` | Tweets, profiles, search |
+| `rss` | | RSS/Atom feed reader |
+| `biorxiv` | | Biology/medicine preprints |
+| `scihub` | | Paper access |
+| `google-calendar` | | Calendar events |
+| `google-drive` | | File management |
+| `google-gmail` | | Email access |
+| `google-people` | | Contacts |
+| `google-scholar` | | Academic search |
+| `microsoft-graph` | | Microsoft 365 services |
+| `atlassian` | | Jira + Confluence |
+| `imap` | | Email retrieval |
+| `macos` | | macOS automation |
+| `spotlight` | | File search (macOS) |
+| `openai-search` | | OpenAI web search |
+| `anthropic-search` | | Anthropic web search |
+| `gemini-search` | | Gemini web search |
+| `perplexity-search` | | Perplexity search |
+| `xai-search` | | xAI web search |
+| `exa` | | Neural search |
+| `tavily-search` | | Tavily search |
+| `serper-search` | | Serper search |
+| `serpapi-search` | | SerpAPI search |
+| `firecrawl-search` | | Firecrawl scraping |
+| `parallel-search` | | Parallel AI search |
 
 ### Response Format
 
@@ -297,14 +403,10 @@ Most connectors support a `response_format` parameter to control output verbosit
 
 ```bash
 # Concise output (default) - minimal fields, fewer tokens
-arivu hackernews get_stories --args '{"story_type":"top","limit":5}'
+arivu hackernews top --limit 5
 
-# Detailed output - full metadata
-arivu hackernews get_stories --args '{"story_type":"top","limit":5,"response_format":"detailed"}'
-
-# Works across connectors
-arivu pubmed search --args '{"query":"CRISPR","response_format":"detailed"}'
-arivu github list_issues --args '{"owner":"rust-lang","repo":"rust","response_format":"concise"}'
+# With JSON args for detailed output
+arivu call hackernews get_stories --args '{"story_type":"top","limit":5,"response_format":"detailed"}'
 ```
 
 This is particularly useful when integrating with AI agents where token usage matters. The concise format reduces response size while preserving the most important information.

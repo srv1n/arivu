@@ -180,40 +180,50 @@ arivu connectors                  # Show all connector details
 arivu connectors --output yaml    # Export as YAML
 ```
 
-### `arivu call` - Execute Connector Tools
-Directly execute any tool provided by a connector.
+### Connector Subcommands (Recommended)
 
-**Simplified Syntax:**
+Each connector has its own subcommand with proper CLI flags:
+
 ```bash
-arivu <CONNECTOR> <TOOL> [ARGUMENTS...]
+# YouTube
+arivu youtube search --query "rust programming" --limit 10
+arivu youtube video --id dQw4w9WgXcQ
+arivu youtube transcript --id dQw4w9WgXcQ
+
+# Hacker News
+arivu hackernews top --limit 20
+arivu hackernews search --query "rust" --limit 10
+arivu hn story --id 38500000
+
+# arXiv
+arivu arxiv search --query "transformer architecture" --limit 10
+arivu arxiv paper --id 2301.07041
+
+# GitHub
+arivu github search-repos --query "rust cli"
+arivu gh issues --repo rust-lang/rust --state open
+
+# Local filesystem
+arivu localfs list-files --path ~/Documents --recursive
+arivu localfs extract-text --path ~/paper.pdf
+
+# Use --help on any subcommand
+arivu hackernews --help
+arivu youtube search --help
 ```
-The CLI automatically maps positional arguments to the tool's required parameters.
 
-**Examples:**
-```bash
-# Search YouTube videos (maps 'huberman' to 'query')
-arivu youtube search_videos huberman
+### `arivu call` - Advanced Tool Execution
 
-# Search Hacker News stories (maps 'rust' to 'query', '5' to 'limit')
-arivu hackernews search_stories rust 5
+For advanced use cases or tools without dedicated subcommands, use JSON args:
 
-# Get generic web content
-arivu web get_content "https://example.com"
-```
-
-**Advanced/Scripting Syntax:**
-Use `--args` with a JSON object for precise control or complex parameters.
 ```bash
 arivu call <CONNECTOR> <TOOL> --args <JSON>
 ```
 
 **Examples:**
 ```bash
-# Precise search with specific parameters
 arivu call youtube search_videos --args '{"query": "rust", "limit": 10}'
-
-# Complex filter
-arivu call github search_issues --args '{"query": "bug", "repo": "owner/repo", "state": "open"}'
+arivu call github list_issues --args '{"owner": "rust-lang", "repo": "rust", "state": "open"}'
 ```
 Manage authentication credentials for connectors.
 

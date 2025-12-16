@@ -873,13 +873,13 @@ Environment variable: `MYSERVICE_API_KEY`
 ## Examples
 
 \`\`\`bash
-# Search
-arivu myconnector "rust programming"
-arivu search myconnector "rust programming"
+# Using connector subcommands (recommended)
+arivu myconnector search --query "rust programming"
+arivu myconnector get --id abc123
 
-# Get by ID
+# Using generic commands
+arivu search myconnector "rust programming"
 arivu fetch ms:abc123
-arivu call myconnector get_item --args '{"id":"abc123"}'
 \`\`\`
 ```
 

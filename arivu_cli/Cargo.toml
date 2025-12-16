@@ -1,6 +1,6 @@
 [package]
 name = "arivu_cli"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2021"
 description = "CLI interface for Arivu - unified data access tool"
 license = "MIT OR Apache-2.0"
@@ -96,5 +96,8 @@ macos-automation = ["arivu_core/macos-automation"]
 macos-spotlight = ["arivu_core/macos-spotlight"]
 # EXPERIMENTAL - NOT READY: See arivu_core/src/connectors/apple_health/NOT_READY.md
 # apple-health = ["arivu_core/apple-health"]
+
+# Local filesystem text extraction
+localfs = ["arivu_core/localfs"]
 
 tui = ["ratatui", "crossterm"]

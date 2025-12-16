@@ -28,6 +28,7 @@ async fn main() {
     // "arivu <connector> ..." -> "arivu call <connector> ..." or "arivu search <connector> ..."
     let mut args: Vec<String> = std::env::args().collect();
     let built_in_commands = [
+        // Core commands
         "list",
         "ls",
         "setup",
@@ -45,6 +46,63 @@ async fn main() {
         "help",
         "--help",
         "-h",
+        // Connector-specific subcommands with proper CLI flags
+        "localfs",
+        "fs",
+        "file",
+        "youtube",
+        "yt",
+        "hackernews",
+        "hn",
+        "arxiv",
+        "github",
+        "gh",
+        "reddit",
+        "web",
+        "wikipedia",
+        "wiki",
+        "pubmed",
+        "semantic-scholar",
+        "scholar",
+        "slack",
+        "x",
+        "twitter",
+        "discord",
+        "rss",
+        "biorxiv",
+        "scihub",
+        "macos",
+        "spotlight",
+        // Google connectors
+        "google-calendar",
+        "gcal",
+        "google-drive",
+        "gdrive",
+        "google-gmail",
+        "gmail",
+        "google-people",
+        "gpeople",
+        "google-scholar",
+        "gscholar",
+        // LLM Search connectors
+        "openai-search",
+        "anthropic-search",
+        "gemini-search",
+        "perplexity-search",
+        "xai-search",
+        "exa",
+        "tavily-search",
+        "serper-search",
+        "serpapi-search",
+        "firecrawl-search",
+        "parallel-search",
+        // Productivity connectors
+        "atlassian",
+        "jira",
+        "microsoft-graph",
+        "msgraph",
+        "imap",
+        "email",
     ];
 
     // Find the index of the subcommand (first non-flag argument)
@@ -141,6 +199,7 @@ async fn main() {
                 merge,
                 add.as_deref(),
                 exclude.as_deref(),
+                false, // web flag removed
             )
             .await
         }
@@ -156,6 +215,94 @@ async fn main() {
             args,
             params,
         }) => call::run(&cli, connector, tool, args.as_deref(), params).await,
+
+        // Google connectors
+        Some(Commands::GoogleCalendar { tool }) => {
+            connectors::handle_google_calendar(&cli, tool.clone()).await
+        }
+        Some(Commands::GoogleDrive { tool }) => {
+            connectors::handle_google_drive(&cli, tool.clone()).await
+        }
+        Some(Commands::GoogleGmail { tool }) => {
+            connectors::handle_google_gmail(&cli, tool.clone()).await
+        }
+        Some(Commands::GooglePeople { tool }) => {
+            connectors::handle_google_people(&cli, tool.clone()).await
+        }
+        Some(Commands::GoogleScholar { tool }) => {
+            connectors::handle_google_scholar(&cli, tool.clone()).await
+        }
+
+        // LLM Search connectors
+        Some(Commands::OpenaiSearch { tool }) => {
+            connectors::handle_openai_search(&cli, tool.clone()).await
+        }
+        Some(Commands::AnthropicSearch { tool }) => {
+            connectors::handle_anthropic_search(&cli, tool.clone()).await
+        }
+        Some(Commands::GeminiSearch { tool }) => {
+            connectors::handle_gemini_search(&cli, tool.clone()).await
+        }
+        Some(Commands::PerplexitySearch { tool }) => {
+            connectors::handle_perplexity_search(&cli, tool.clone()).await
+        }
+        Some(Commands::XaiSearch { tool }) => {
+            connectors::handle_xai_search(&cli, tool.clone()).await
+        }
+        Some(Commands::Exa { tool }) => connectors::handle_exa(&cli, tool.clone()).await,
+        Some(Commands::TavilySearch { tool }) => {
+            connectors::handle_tavily_search(&cli, tool.clone()).await
+        }
+        Some(Commands::SerperSearch { tool }) => {
+            connectors::handle_serper_search(&cli, tool.clone()).await
+        }
+        Some(Commands::SerpapiSearch { tool }) => {
+            connectors::handle_serpapi_search(&cli, tool.clone()).await
+        }
+        Some(Commands::FirecrawlSearch { tool }) => {
+            connectors::handle_firecrawl_search(&cli, tool.clone()).await
+        }
+        Some(Commands::ParallelSearch { tool }) => {
+            connectors::handle_parallel_search(&cli, tool.clone()).await
+        }
+
+        // Productivity connectors
+        Some(Commands::Atlassian { tool }) => {
+            connectors::handle_atlassian(&cli, tool.clone()).await
+        }
+        Some(Commands::MicrosoftGraph { tool }) => {
+            connectors::handle_microsoft_graph(&cli, tool.clone()).await
+        }
+        Some(Commands::Imap { tool }) => connectors::handle_imap(&cli, tool.clone()).await,
+
+        // For now, other connectors fall back to the call command
+        // Connector-specific subcommands with proper CLI flags
+        Some(Commands::Localfs { tool }) => connectors::handle_localfs(&cli, tool.clone()).await,
+        Some(Commands::Youtube { tool }) => connectors::handle_youtube(&cli, tool.clone()).await,
+        Some(Commands::Hackernews { tool }) => {
+            connectors::handle_hackernews(&cli, tool.clone()).await
+        }
+        Some(Commands::Arxiv { tool }) => connectors::handle_arxiv(&cli, tool.clone()).await,
+        Some(Commands::Github { tool }) => connectors::handle_github(&cli, tool.clone()).await,
+        Some(Commands::Reddit { tool }) => connectors::handle_reddit(&cli, tool.clone()).await,
+        Some(Commands::Web { tool }) => connectors::handle_web(&cli, tool.clone()).await,
+        Some(Commands::Wikipedia { tool }) => {
+            connectors::handle_wikipedia(&cli, tool.clone()).await
+        }
+        Some(Commands::Pubmed { tool }) => connectors::handle_pubmed(&cli, tool.clone()).await,
+        Some(Commands::SemanticScholar { tool }) => {
+            connectors::handle_semantic_scholar(&cli, tool.clone()).await
+        }
+        Some(Commands::Slack { tool }) => connectors::handle_slack(&cli, tool.clone()).await,
+        Some(Commands::X { tool }) => connectors::handle_x(&cli, tool.clone()).await,
+        Some(Commands::Discord { tool }) => connectors::handle_discord(&cli, tool.clone()).await,
+        Some(Commands::Rss { tool }) => connectors::handle_rss(&cli, tool.clone()).await,
+        Some(Commands::Biorxiv { tool }) => connectors::handle_biorxiv(&cli, tool.clone()).await,
+        Some(Commands::Scihub { tool }) => connectors::handle_scihub(&cli, tool.clone()).await,
+        Some(Commands::Macos { tool }) => connectors::handle_macos(&cli, tool.clone()).await,
+        Some(Commands::Spotlight { tool }) => {
+            connectors::handle_spotlight(&cli, tool.clone()).await
+        }
     };
 
     if let Err(e) = result {

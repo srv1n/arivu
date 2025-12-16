@@ -1,6 +1,10 @@
 // Meta-connectors (always available)
 pub mod federated;
 
+// Local filesystem connector
+#[cfg(feature = "localfs")]
+pub mod localfs;
+
 #[cfg(feature = "arxiv")]
 pub mod arxiv;
 #[cfg(feature = "atlassian")]

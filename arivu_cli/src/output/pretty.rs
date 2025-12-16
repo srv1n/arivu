@@ -42,6 +42,7 @@ const LIST_KEYS: &[&str] = &[
     "users",
     "channels",
     "events",
+    "sections", // Document structure sections
 ];
 
 /// Keys to show as primary (title-like)
@@ -60,16 +61,20 @@ const SNIPPET_KEYS: &[&str] = &[
     "text",
     "body",
     "content",
+    "preview", // Document section previews
 ];
 
 /// Keys for metadata (shown dimmed)
 const META_KEYS: &[&str] = &[
+    "channel_name",
     "author",
     "authors",
     "user",
     "username",
     "from",
     "by",
+    "views",
+    "uploaded_at",
     "date",
     "published",
     "created_at",
@@ -136,10 +141,22 @@ fn format_value(value: &Value, output: &mut String, width: usize, depth: usize) 
         Value::Object(obj) => {
             // Check if there's a list key we should extract
             if let Some((list_key, list_value)) = find_list_in_object(obj) {
-                // Show top-level metadata first
+                // Show top-level metadata first (skip redundant fields)
+                let file_type = obj.get("file_type").and_then(|v| v.as_str());
+                let skip_keys: &[&str] = match (list_key, file_type) {
+                    ("sections", Some("epub")) => &["total_chapters", "total_pages"],
+                    ("sections", Some("pdf")) => &["total_chapters", "total_pages"],
+                    _ => &[],
+                };
+
                 let metadata: Vec<_> = obj
                     .iter()
-                    .filter(|(k, v)| *k != list_key && !v.is_array() && !v.is_object())
+                    .filter(|(k, v)| {
+                        *k != list_key
+                            && !v.is_array()
+                            && !v.is_object()
+                            && !skip_keys.contains(&k.as_str())
+                    })
                     .collect();
 
                 if !metadata.is_empty() {
@@ -149,8 +166,17 @@ fn format_value(value: &Value, output: &mut String, width: usize, depth: usize) 
                     output.push('\n');
                 }
 
+                // Use context-aware label for document structures
+                let label = match (list_key, file_type) {
+                    ("sections", Some("epub")) => "chapters",
+                    ("sections", Some("pdf")) => "pages",
+                    ("sections", Some("markdown" | "docx" | "html")) => "headings",
+                    ("sections", Some("code")) => "definitions",
+                    _ => list_key,
+                };
+
                 // Show the list as cards
-                output.push_str(&format_cards(list_value, Some(list_key)));
+                output.push_str(&format_cards(list_value, Some(label)));
             } else {
                 // No list found - format as key-value pairs with hierarchy
                 format_object_hierarchical(obj, output, width, depth);
@@ -264,6 +290,18 @@ fn format_card(item: &Value, index: usize, width: usize) -> String {
             }
             return output;
         }
+    };
+
+    // Handle tagged enum pattern: {"type": "...", "data": {...}}
+    // Unwrap the inner data object if present
+    let obj = if obj.contains_key("type") && obj.contains_key("data") {
+        if let Some(Value::Object(inner)) = obj.get("data") {
+            inner
+        } else {
+            obj
+        }
+    } else {
+        obj
     };
 
     // Extract key fields

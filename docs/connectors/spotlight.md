@@ -117,29 +117,30 @@ The connector responds to these input patterns via `arivu fetch`:
 
 ```bash
 # Search file contents
-arivu call spotlight search_content --args '{"query": "quarterly report"}'
+arivu spotlight search-content --query "quarterly report"
 
 # Search in specific directory
-arivu call spotlight search_content --args '{"query": "TODO", "directory": "~/Projects"}'
+arivu spotlight search-content --query "TODO" --directory ~/Projects
 
 # Find files by name
-arivu call spotlight search_by_name --args '{"name": "config.yaml"}'
+arivu spotlight search-by-name --name "config.yaml"
 
 # Find all PDFs
-arivu call spotlight search_by_kind --args '{"kind": "pdf"}'
+arivu spotlight search-by-kind --kind pdf
 
 # Find recently modified code files
-arivu call spotlight search_recent --args '{"days": 3, "kind": "code"}'
+arivu spotlight search-recent --days 3 --kind code
 
 # Get file metadata
-arivu call spotlight get_metadata --args '{"path": "/Users/me/report.pdf"}'
-
-# Raw Spotlight query
-arivu call spotlight raw_query --args '{"query": "kMDItemContentType == \"public.plain-text\" && kMDItemTextContent == \"*TODO*\"cd"}'
+arivu spotlight metadata --path /Users/me/report.pdf
 
 # Using smart resolver
 arivu fetch ~/Documents/report.pdf
 arivu fetch "spotlight:CRISPR gene therapy"
+
+# Use --help for all options
+arivu spotlight --help
+arivu spotlight search-content --help
 ```
 
 ## Testing Plan

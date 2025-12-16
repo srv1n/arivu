@@ -15,10 +15,16 @@ This repo runs MCP servers (stdio today; HTTP optional later). We align with the
 
 Example (Slack token):
 
-- `arivu tools` shows `auth/slack/get_schema`, `auth/slack/set`, `auth/slack/test`.
-- `arivu call auth/slack/get_schema`
-- `arivu call auth/slack/set --args '{"token":"xoxb-..."}'`
-- `arivu call auth/slack/test`
+```bash
+# Interactive setup (recommended)
+arivu setup slack
+
+# Or set directly
+arivu config set slack --value "xoxb-..."
+
+# Test authentication
+arivu config test slack
+```
 
 ## Supported methods by provider (MVP)
 

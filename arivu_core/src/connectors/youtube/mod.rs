@@ -87,6 +87,7 @@ pub struct VideoSearchResult {
     pub duration_seconds: u64,
     pub views: u64,
     pub uploaded_at: Option<String>,
+    pub channel_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -174,6 +175,7 @@ impl From<rusty_ytdl::search::Video> for VideoSearchResult {
             duration_seconds: video.duration,
             views: video.views,
             uploaded_at: video.uploaded_at.clone(),
+            channel_name: video.channel.name.clone(),
         }
     }
 }
@@ -568,12 +570,18 @@ pub struct ChapterContentConcise {
     pub content: String,
 }
 
-/// Concise video search result
+/// Concise video search result - includes key metadata for LLM decision-making
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct VideoSearchResultConcise {
     pub id: String,
     pub title: String,
     pub url: String,
+    pub channel_name: String,
+    pub views: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploaded_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
 /// Concise playlist search result
@@ -963,10 +971,26 @@ impl Connector for YouTubeConnector {
                         .iter()
                         .map(|r| match r {
                             SearchResultItem::Video(v) => {
+                                // Create a snippet from description (first ~150 chars)
+                                let snippet = if v.description.is_empty() {
+                                    None
+                                } else {
+                                    let clean = v.description.replace('\n', " ");
+                                    let truncated: String = clean.chars().take(150).collect();
+                                    if clean.chars().count() > 150 {
+                                        Some(format!("{}...", truncated))
+                                    } else {
+                                        Some(truncated)
+                                    }
+                                };
                                 SearchResultItemConcise::Video(VideoSearchResultConcise {
                                     id: v.id.clone(),
                                     title: v.title.clone(),
                                     url: v.url.clone(),
+                                    channel_name: v.channel_name.clone(),
+                                    views: v.views,
+                                    uploaded_at: v.uploaded_at.clone(),
+                                    snippet,
                                 })
                             }
                             SearchResultItem::Playlist(p) => {

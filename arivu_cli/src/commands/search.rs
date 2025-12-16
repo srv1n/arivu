@@ -19,6 +19,7 @@ use std::sync::Arc;
 /// - `merge`: Merge mode (grouped or interleaved)
 /// - `add`: Additional connectors to add to profile
 /// - `exclude`: Connectors to exclude from profile
+/// - `web`: Quick flag to search web sources
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     cli: &Cli,
@@ -30,7 +31,23 @@ pub async fn run(
     merge: &str,
     add: Option<&str>,
     exclude: Option<&str>,
+    web: bool,
 ) -> Result<()> {
+    // Handle --web flag: use the "web" profile
+    if web {
+        return run_federated_search(
+            cli,
+            connector_or_query,
+            limit,
+            Some("web"),
+            None,
+            merge,
+            add,
+            exclude,
+        )
+        .await;
+    }
+
     // Determine if this is a federated search or single connector search
     let is_federated = profile.is_some() || connectors.is_some();
 

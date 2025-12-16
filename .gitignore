@@ -34,3 +34,4 @@ logs/
 # Test artifacts
 *.profraw
 coverage/
+hn_copy.md

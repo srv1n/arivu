@@ -504,6 +504,12 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
         }
     }
 
+    #[cfg(feature = "localfs")]
+    {
+        let connector = connectors::localfs::LocalFsConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
     registry
 }
 

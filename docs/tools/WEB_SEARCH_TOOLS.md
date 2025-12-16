@@ -47,7 +47,7 @@ Notes
 - Inputs: base inputs + `model` (string), `max_output_tokens` (integer)
 - Output: `{ provider:"openai", model, query, limit_hint, answer, citations, raw? }`
 - Example (CLI):
-  - `rzn call openai-search/search --args '{"query":"What changed in SEC climate rules in 2025?","max_results":4,"response_format":"concise"}'`
+  - `arivu openai-search search --query "What changed in SEC climate rules in 2025?" --max-results 4`
 - Example (JSON-RPC):
   - `{ "method":"tools/call", "params": { "name":"openai-search/search", "arguments": { "query":"…", "max_results":4 } } }`
 
@@ -125,11 +125,17 @@ Notes
 ## CLI Examples (copy/paste)
 
 - OpenAI concise answer:
-  - `rzn call openai-search/search --args '{"query":"What changed in SEC climate rules in 2025?","max_results":4}'`
+  - `arivu openai-search search --query "What changed in SEC climate rules in 2025?" --max-results 4`
 - xAI live search across web+X:
-  - `rzn call xai-search/search --args '{"query":"Latest on OpenAI board changes","sources":["web","x"],"mode":"on","locale":"en-US","max_results":6,"include_domains":["wsj.com","bloomberg.com"],"date_preset":"last_7_days"}'`
+  - `arivu xai-search search --query "Latest on OpenAI board changes" --max-results 6`
 - SerpAPI localized SERP:
-  - `rzn call serpapi-search/search --args '{"query":"best postgres connection pool settings","locale":"en-US","max_results":10}'`
+  - `arivu serpapi-search search --query "best postgres connection pool settings" --max-results 10`
+- Exa neural search:
+  - `arivu exa search --query "rust async runtime best practices" --num-results 8`
+- Perplexity search:
+  - `arivu perplexity-search search --query "AI safety research 2025"`
+
+Use `arivu <connector> --help` for all available options.
 
 ---
 
@@ -171,4 +177,4 @@ Notes
 
 - Unknown field error → remove or rename to the unified parameter names.
 - No results vs answer only → providers vary: LLM tools return `answer` and `citations`; SERP tools return `results`. Use `response_format:"detailed"` to inspect `raw` for provider nuances.
-- Auth errors → export the env var or run `rzn config set <connector> --args '{"api_key":"…"}'`.
+- Auth errors → export the env var or run `arivu config set <connector> --value "<api_key>"`.

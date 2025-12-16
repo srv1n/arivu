@@ -623,6 +623,63 @@ fn build_default_patterns() -> Vec<InputPattern> {
             description: "Spotlight search query (spotlight:query or mdfind:query)",
         },
 
+        // === Local Filesystem ===
+        #[cfg(feature = "localfs")]
+        InputPattern {
+            id: "localfs_document_file",
+            connector: "localfs",
+            tool: "extract_text",
+            pattern: Regex::new(r"^(?P<path>(?:/|~/)[^\s]*\.(?:pdf|epub|docx?|md|markdown|html?|txt|tex))$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 95,
+            description: "Local document file (PDF, EPUB, DOCX, MD, HTML, TXT)",
+        },
+        #[cfg(feature = "localfs")]
+        InputPattern {
+            id: "localfs_code_file",
+            connector: "localfs",
+            tool: "extract_text",
+            pattern: Regex::new(r"^(?P<path>(?:/|~/)[^\s]*\.(?:rs|py|js|ts|jsx|tsx|go|java|cpp|c|h|hpp|rb|swift|kt|scala|sh|yaml|yml|json|toml|xml|css|sql|vue|svelte))$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 90,
+            description: "Local code file",
+        },
+        #[cfg(feature = "localfs")]
+        InputPattern {
+            id: "localfs_absolute_dir",
+            connector: "localfs",
+            tool: "list_files",
+            pattern: Regex::new(r"^(?P<path>/(?:Users|home|Volumes|mnt|opt|var|tmp|etc)[^\s]*/)$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 85,
+            description: "Local directory path (ending with /)",
+        },
+        #[cfg(feature = "localfs")]
+        InputPattern {
+            id: "localfs_home_dir",
+            connector: "localfs",
+            tool: "list_files",
+            pattern: Regex::new(r"^(?P<path>~(?:/[^\s]*)?)/$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 85,
+            description: "Home directory path (~/.../ ending with /)",
+        },
+        #[cfg(feature = "localfs")]
+        InputPattern {
+            id: "localfs_file_prefix",
+            connector: "localfs",
+            tool: "extract_text",
+            pattern: Regex::new(r"^(?:file:|localfs:)(?P<path>[^\s]+)$").unwrap(),
+            captures: &["path"],
+            arg_mapping: &[("path", "path")],
+            priority: 95,
+            description: "Local file with prefix (file:/path or localfs:/path)",
+        },
+
         // === Generic Web URLs ===
         InputPattern {
             id: "web_url",
@@ -685,6 +742,11 @@ fn get_pattern_example(pattern_id: &str) -> String {
         "spotlight_absolute_path" => "/Users/me/Documents/report.pdf",
         "spotlight_home_path" => "~/Documents/report.pdf",
         "spotlight_query_prefix" => "spotlight:CRISPR research",
+        "localfs_document_file" => "/path/to/document.pdf",
+        "localfs_code_file" => "/path/to/script.py",
+        "localfs_absolute_dir" => "/Users/me/Documents/",
+        "localfs_home_dir" => "~/Downloads/",
+        "localfs_file_prefix" => "file:/path/to/file.epub",
         "web_url" => "https://example.com/page",
         _ => "",
     }

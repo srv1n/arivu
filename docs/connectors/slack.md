@@ -77,11 +77,23 @@ Inputs follow our JSON Schema pattern; outputs include structured items with `te
 
 - Build CLI with Slack enabled: `cargo build -p rzn_datasourcer_cli --features slack`
 - Set token: `rzn config set slack token xoxb-...` (bot or user token with read scopes)
-- Test: `rzn config test slack` or call `rzn tools slack` then `rzn call slack test_auth`
+- Test: `arivu config test slack` or call `arivu tools slack`
 
 ### Examples
 
-- Resolve permalink to thread:
-  - `rzn call slack get_thread_by_permalink --args '{"permalink":"https://yourworkspace.slack.com/archives/C123/p1716932719000123?thread_ts=1716932719.000123"}'`
-- List channels:
-  - `rzn call slack list_channels --args '{"types":"public_channel,private_channel","limit":100}'`
+```bash
+# List channels
+arivu slack channels --limit 100
+
+# Get channel messages
+arivu slack messages --channel general --limit 50
+
+# Search messages
+arivu slack search --query "project update" --limit 20
+
+# List users
+arivu slack users --limit 100
+
+# Use --help for all options
+arivu slack --help
+```
