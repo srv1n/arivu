@@ -948,7 +948,7 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("search_stories"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for Hacker News stories using Algolia")),
+                description: Some(Cow::Borrowed("Keyword search of HN via Algolia.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -973,7 +973,7 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("search_by_date"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for recent Hacker News stories using Algolia")),
+                description: Some(Cow::Borrowed("Recent HN search (chronological).")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -998,7 +998,9 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("get_stories"),
                 title: None,
-                description: Some(Cow::Borrowed("Get Hacker News stories by type. Use 'type' to select: top (front page), new (latest), best (highest points), ask (Ask HN), show (Show HN), or job (job postings).")),
+                description: Some(Cow::Borrowed(
+                    "Top/new/best/ask/show/job stories by type.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -1035,7 +1037,9 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("get_post"),
                 title: None,
-                description: Some(Cow::Borrowed("Get a Hacker News story or comment by ID. Returns the item's title, text, author, and full comment tree. Use 'flatten' to get comments as a flat list instead of nested.")),
+                description: Some(Cow::Borrowed(
+                    "Story or comment by ID, with comments.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

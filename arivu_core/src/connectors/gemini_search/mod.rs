@@ -30,7 +30,7 @@ impl GeminiSearchConnector {
         let default_model = auth
             .get("model")
             .cloned()
-            .unwrap_or_else(|| "gemini-1.5-pro-latest".to_string());
+            .unwrap_or_else(|| "gemini-2.5-pro".to_string());
 
         Ok(Self {
             client,
@@ -101,7 +101,9 @@ impl Connector for GeminiSearchConnector {
         let tool = Tool {
             name: Cow::Borrowed("search"),
             title: None,
-            description: Some(Cow::Borrowed("Grounded answer via Gemini + Google Search tool. Provide a clear question; avoid redundant keywords/years. response_format controls whether raw payload is included.")),
+            description: Some(Cow::Borrowed(
+                "Grounded web search via Gemini; use for current info.",
+            )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
@@ -220,6 +222,14 @@ impl Connector for GeminiSearchConnector {
             "answer": answer,
 
         });
+        if let Some(meta) = value.get("usageMetadata") {
+            let usage = json!({
+                "input_tokens": meta.get("promptTokenCount").cloned(),
+                "output_tokens": meta.get("candidatesTokenCount").cloned(),
+                "total_tokens": meta.get("totalTokenCount").cloned(),
+            });
+            data["usage"] = usage;
+        }
         if detailed {
             data["raw"] = value.clone();
         }

@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::commands::usage_helpers::print_cost_summary;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::{CallToolRequestParam, PaginatedRequestParam};
@@ -82,43 +83,63 @@ pub async fn run(
             }
         }
 
-        // Separate positional args from named args (after --)
-        // Format: positional_args... -- --name value --name2 value2
+        // Parse arguments - support both styles:
+        // 1. Named args: --name value or -n value (anywhere in the args)
+        // 2. Positional args: values without flags
+        // The -- separator can be used to force remaining args as positional
         let mut positional_args: Vec<&String> = Vec::new();
-        let mut named_args: Vec<(&String, &String)> = Vec::new();
-        let mut in_named_section = false;
+        let mut named_args: Vec<(String, String)> = Vec::new();
+        let mut force_positional = false;
         let mut i = 0;
 
         while i < params.len() {
             let param = &params[i];
+
+            // The -- separator forces remaining args to be positional
             if param == "--" {
-                in_named_section = true;
+                force_positional = true;
                 i += 1;
                 continue;
             }
 
-            if in_named_section {
-                // Parse --name value pairs
-                if param.starts_with("--") && i + 1 < params.len() {
-                    named_args.push((&params[i], &params[i + 1]));
-                    i += 2;
+            if !force_positional {
+                // Check for --name value or --name=value style
+                if let Some(flag_part) = param.strip_prefix("--") {
+                    // Handle --name=value style
+                    if let Some(eq_pos) = flag_part.find('=') {
+                        let name = flag_part[..eq_pos].replace('-', "_");
+                        let value = flag_part[eq_pos + 1..].to_string();
+                        named_args.push((name, value));
+                        i += 1;
+                        continue;
+                    }
+
+                    // Handle --name value style
+                    if i + 1 < params.len() && !params[i + 1].starts_with('-') {
+                        let name = flag_part.replace('-', "_");
+                        named_args.push((name, params[i + 1].clone()));
+                        i += 2;
+                        continue;
+                    }
+
+                    // Boolean flag (--flag without value)
+                    let name = flag_part.replace('-', "_");
+                    named_args.push((name, "true".to_string()));
+                    i += 1;
                     continue;
                 }
-                // Also support -n value (single dash)
-                if param.starts_with('-')
-                    && !param.starts_with("--")
-                    && param.len() > 1
-                    && i + 1 < params.len()
-                {
-                    named_args.push((&params[i], &params[i + 1]));
+
+                // Check for -n value style (single char flags)
+                if param.starts_with('-') && param.len() == 2 && i + 1 < params.len() {
+                    let name = param[1..].to_string();
+                    named_args.push((name, params[i + 1].clone()));
                     i += 2;
                     continue;
                 }
             }
 
-            if !in_named_section {
-                positional_args.push(param);
-            }
+            // Everything else is a positional argument
+            positional_args.push(param);
             i += 1;
         }
 
@@ -148,18 +169,16 @@ pub async fn run(
         }
 
         // Map named args
-        for (flag, value) in named_args {
-            let name = flag.trim_start_matches('-');
-            // Convert kebab-case to snake_case for parameter names
-            let normalized_name = name.replace('-', "_");
+        for (name, value) in named_args {
+            // name is already normalized (kebab to snake_case done during parsing)
             let typed_value = if let Ok(num) = value.parse::<i64>() {
                 json!(num)
             } else if let Ok(b) = value.parse::<bool>() {
                 json!(b)
             } else {
-                json!(value)
+                json!(&value)
             };
-            args_map.insert(normalized_name, typed_value);
+            args_map.insert(name, typed_value);
         }
     }
 
@@ -190,6 +209,11 @@ pub async fn run(
         }
     };
 
+    let meta_value = result
+        .meta
+        .as_ref()
+        .and_then(|m| serde_json::to_value(m).ok());
+
     // Prefer structured_content if present
     let payload = if let Some(sc) = result.structured_content {
         sc
@@ -213,6 +237,7 @@ pub async fn run(
                 connector: connector.to_string(),
                 tool: tool.to_string(),
                 result: payload.clone(),
+                meta: meta_value.clone(),
             };
             format_output(&data, &cli.output)?;
         }
@@ -223,6 +248,8 @@ pub async fn run(
         let text = serde_json::to_string_pretty(&payload)?;
         copy_to_clipboard(&text)?;
     }
+
+    print_cost_summary(&cli.output, meta_value.as_ref());
 
     Ok(())
 }

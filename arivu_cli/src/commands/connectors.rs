@@ -281,6 +281,7 @@ use crate::cli::{
     WikipediaTools, XTools, XaiSearchTools, YoutubeTools,
 };
 use crate::commands::copy_to_clipboard;
+use crate::commands::usage_helpers::print_cost_summary;
 use arivu_core::CallToolRequestParam;
 use serde_json::Map;
 
@@ -299,6 +300,11 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
     };
 
     let result = c.call_tool(request).await?;
+
+    let meta_value = result
+        .meta
+        .as_ref()
+        .and_then(|m| serde_json::to_value(m).ok());
 
     let payload = if let Some(sc) = result.structured_content {
         sc
@@ -322,6 +328,7 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
                 connector: connector.to_string(),
                 tool: tool.to_string(),
                 result: payload.clone(),
+                meta: meta_value.clone(),
             };
             format_output(&data, &cli.output)?;
         }
@@ -331,6 +338,8 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
         let text = serde_json::to_string_pretty(&payload)?;
         copy_to_clipboard(&text)?;
     }
+
+    print_cost_summary(&cli.output, meta_value.as_ref());
 
     Ok(())
 }

@@ -81,7 +81,7 @@ impl Connector for SerperSearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Serper.dev Google SERP JSON. Keep queries simple; use max_results to control size; response_format to include raw payload if needed.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Google SERP via Serper.")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},

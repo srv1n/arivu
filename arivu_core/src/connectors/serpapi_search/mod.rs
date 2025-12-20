@@ -82,7 +82,7 @@ impl Connector for SerpapiSearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("SerpAPI Google Search SERP JSON. Keep queries minimal; set max_results and locale fields; response_format controls inclusion of raw payload.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("SERP search via SerpAPI.")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},

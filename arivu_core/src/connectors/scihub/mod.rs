@@ -319,9 +319,7 @@ impl Connector for SciHubConnector {
             tools: vec![Tool {
                 name: Cow::Borrowed("get_paper"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Get a scientific paper from Sci-Hub using its DOI",
-                )),
+                description: Some(Cow::Borrowed("Paper by DOI from Sci-Hub.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

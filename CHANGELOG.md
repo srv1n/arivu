@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+## [0.2.8] - 2025-12-20
+
+### Added
+- LLM quick sheet for tool selection (`docs/llms.txt`)
+- Task → Tool mappings across connector docs for MCP usage
+- Documentation sections for additional connectors (bioRxiv/medRxiv, Google Scholar, RSS, LocalFS, Spotlight, Discord)
+
+### Changed
+- Tightened MCP tool descriptions for LLM-friendly selection across connectors
+- Updated MCP README tool naming guidance and auth notes
+- Clarified explicit user-permission requirements for personal-data connectors
+
+### Added
 - Interactive setup wizard (`arivu setup`)
 - Comprehensive connector documentation
 - GitHub Actions release workflow for all platforms
@@ -94,5 +110,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/srv1n/arivu/releases/tag/v0.2.8
 [0.1.0]: https://github.com/srv1n/arivu/releases/tag/v0.1.0

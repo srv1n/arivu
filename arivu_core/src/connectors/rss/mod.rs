@@ -7,10 +7,9 @@ use feed_rs::parser;
 use reqwest::Client;
 use rmcp::model::*;
 use scraper::{Html, Selector};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -137,9 +136,7 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("get_feed"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Fetch and parse a feed, returning metadata and recent entries",
-                )),
+                description: Some(Cow::Borrowed("Fetch a feed with metadata + entries.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -166,7 +163,7 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("list_entries"),
                 title: None,
-                description: Some(Cow::Borrowed("List entries from a feed with a limit")),
+                description: Some(Cow::Borrowed("List feed entries.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -193,9 +190,7 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("search_feed"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Search entries within a feed by keyword in title or summary",
-                )),
+                description: Some(Cow::Borrowed("Search entries by keyword.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -226,9 +221,7 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("discover_feeds"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Find RSS/Atom/JSON feeds on a given webpage by inspecting link tags",
-                )),
+                description: Some(Cow::Borrowed("Discover feeds on a webpage.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -348,8 +341,14 @@ impl Connector for RssConnector {
 
                 let entries: Vec<Value> = feed.entries.iter()
                     .filter(|e| {
-                        let title_match = e.title.as_ref().map_or(false, |t| t.content.to_lowercase().contains(&query_lower));
-                        let summary_match = e.summary.as_ref().map_or(false, |s| s.content.to_lowercase().contains(&query_lower));
+                        let title_match = e
+                            .title
+                            .as_ref()
+                            .is_some_and(|t| t.content.to_lowercase().contains(&query_lower));
+                        let summary_match = e
+                            .summary
+                            .as_ref()
+                            .is_some_and(|s| s.content.to_lowercase().contains(&query_lower));
                         title_match || summary_match
                     })
                     .take(limit)

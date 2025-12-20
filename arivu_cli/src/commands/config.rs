@@ -294,7 +294,23 @@ async fn test_config(_cli: &Cli, connector: &str) -> Result<()> {
         .get_provider(connector)
         .ok_or_else(|| CommandError::ConnectorNotFound(connector.to_string()))?;
 
-    let c = provider.lock().await;
+    let mut c = provider.lock().await;
+
+    // Load saved credentials and set them on the connector
+    let store = FileAuthStore::new_default();
+    if let Some(auth) = store.load(connector) {
+        if let Err(e) = c.set_auth_details(auth).await {
+            println!("{}", "Failed".red().bold());
+            println!();
+            println!(
+                "{} {}",
+                "Error:".red().bold(),
+                format!("Failed to set credentials: {}", e).red()
+            );
+            return Ok(());
+        }
+    }
+
     match c.test_auth().await {
         Ok(_) => {
             println!("{}", "Success!".green().bold());

@@ -10,6 +10,7 @@ mod output;
 #[cfg(feature = "tui")]
 mod tui;
 
+use arivu_core::UsageContext;
 use cli::{Cli, Commands};
 use commands::*;
 
@@ -42,6 +43,8 @@ async fn main() {
         "config",
         "connectors",
         "tools",
+        "pricing",
+        "usage",
         "call",
         "help",
         "--help",
@@ -172,138 +175,197 @@ async fn main() {
     }
 
     // Handle regular CLI commands
-    let result = match &cli.command {
-        None => {
-            // No command provided - show quick overview
-            show_overview().await
-        }
-        Some(Commands::List) => list::run(&cli).await,
-        Some(Commands::Setup { connector }) => setup::run(&cli, connector.as_deref()).await,
-        Some(Commands::Search {
-            connector_or_query,
-            query,
-            limit,
-            profile,
-            connectors,
-            merge,
-            add,
-            exclude,
-        }) => {
-            search::run(
-                &cli,
-                connector_or_query,
-                query.as_deref(),
-                *limit,
-                profile.as_deref(),
-                connectors.as_deref(),
-                merge,
-                add.as_deref(),
-                exclude.as_deref(),
-                false, // web flag removed
-            )
-            .await
-        }
-        Some(Commands::Get { connector, id }) => get::run(&cli, connector, id).await,
-        Some(Commands::Fetch { input }) => fetch::run(&cli, input).await,
-        Some(Commands::Formats) => fetch::show_formats(&cli).await,
-        Some(Commands::Config { action }) => config::run(&cli, action.clone()).await,
-        Some(Commands::Connectors) => connectors::run(&cli).await,
-        Some(Commands::Tools { connector }) => tools::run(&cli, connector.as_deref()).await,
-        Some(Commands::Call {
-            connector,
-            tool,
-            args,
-            params,
-        }) => call::run(&cli, connector, tool, args.as_deref(), params).await,
-
-        // Google connectors
-        Some(Commands::GoogleCalendar { tool }) => {
-            connectors::handle_google_calendar(&cli, tool.clone()).await
-        }
-        Some(Commands::GoogleDrive { tool }) => {
-            connectors::handle_google_drive(&cli, tool.clone()).await
-        }
-        Some(Commands::GoogleGmail { tool }) => {
-            connectors::handle_google_gmail(&cli, tool.clone()).await
-        }
-        Some(Commands::GooglePeople { tool }) => {
-            connectors::handle_google_people(&cli, tool.clone()).await
-        }
-        Some(Commands::GoogleScholar { tool }) => {
-            connectors::handle_google_scholar(&cli, tool.clone()).await
-        }
-
-        // LLM Search connectors
-        Some(Commands::OpenaiSearch { tool }) => {
-            connectors::handle_openai_search(&cli, tool.clone()).await
-        }
-        Some(Commands::AnthropicSearch { tool }) => {
-            connectors::handle_anthropic_search(&cli, tool.clone()).await
-        }
-        Some(Commands::GeminiSearch { tool }) => {
-            connectors::handle_gemini_search(&cli, tool.clone()).await
-        }
-        Some(Commands::PerplexitySearch { tool }) => {
-            connectors::handle_perplexity_search(&cli, tool.clone()).await
-        }
-        Some(Commands::XaiSearch { tool }) => {
-            connectors::handle_xai_search(&cli, tool.clone()).await
-        }
-        Some(Commands::Exa { tool }) => connectors::handle_exa(&cli, tool.clone()).await,
-        Some(Commands::TavilySearch { tool }) => {
-            connectors::handle_tavily_search(&cli, tool.clone()).await
-        }
-        Some(Commands::SerperSearch { tool }) => {
-            connectors::handle_serper_search(&cli, tool.clone()).await
-        }
-        Some(Commands::SerpapiSearch { tool }) => {
-            connectors::handle_serpapi_search(&cli, tool.clone()).await
-        }
-        Some(Commands::FirecrawlSearch { tool }) => {
-            connectors::handle_firecrawl_search(&cli, tool.clone()).await
-        }
-        Some(Commands::ParallelSearch { tool }) => {
-            connectors::handle_parallel_search(&cli, tool.clone()).await
-        }
-
-        // Productivity connectors
-        Some(Commands::Atlassian { tool }) => {
-            connectors::handle_atlassian(&cli, tool.clone()).await
-        }
-        Some(Commands::MicrosoftGraph { tool }) => {
-            connectors::handle_microsoft_graph(&cli, tool.clone()).await
-        }
-        Some(Commands::Imap { tool }) => connectors::handle_imap(&cli, tool.clone()).await,
-
-        // For now, other connectors fall back to the call command
-        // Connector-specific subcommands with proper CLI flags
-        Some(Commands::Localfs { tool }) => connectors::handle_localfs(&cli, tool.clone()).await,
-        Some(Commands::Youtube { tool }) => connectors::handle_youtube(&cli, tool.clone()).await,
-        Some(Commands::Hackernews { tool }) => {
-            connectors::handle_hackernews(&cli, tool.clone()).await
-        }
-        Some(Commands::Arxiv { tool }) => connectors::handle_arxiv(&cli, tool.clone()).await,
-        Some(Commands::Github { tool }) => connectors::handle_github(&cli, tool.clone()).await,
-        Some(Commands::Reddit { tool }) => connectors::handle_reddit(&cli, tool.clone()).await,
-        Some(Commands::Web { tool }) => connectors::handle_web(&cli, tool.clone()).await,
-        Some(Commands::Wikipedia { tool }) => {
-            connectors::handle_wikipedia(&cli, tool.clone()).await
-        }
-        Some(Commands::Pubmed { tool }) => connectors::handle_pubmed(&cli, tool.clone()).await,
-        Some(Commands::SemanticScholar { tool }) => {
-            connectors::handle_semantic_scholar(&cli, tool.clone()).await
-        }
-        Some(Commands::Slack { tool }) => connectors::handle_slack(&cli, tool.clone()).await,
-        Some(Commands::X { tool }) => connectors::handle_x(&cli, tool.clone()).await,
-        Some(Commands::Discord { tool }) => connectors::handle_discord(&cli, tool.clone()).await,
-        Some(Commands::Rss { tool }) => connectors::handle_rss(&cli, tool.clone()).await,
-        Some(Commands::Biorxiv { tool }) => connectors::handle_biorxiv(&cli, tool.clone()).await,
-        Some(Commands::Scihub { tool }) => connectors::handle_scihub(&cli, tool.clone()).await,
-        Some(Commands::Macos { tool }) => connectors::handle_macos(&cli, tool.clone()).await,
-        Some(Commands::Spotlight { tool }) => {
-            connectors::handle_spotlight(&cli, tool.clone()).await
-        }
+    let usage_ctx = match std::env::var("ARIVU_RUN_ID") {
+        Ok(id) => UsageContext::new(id),
+        Err(_) => UsageContext::new_random(),
     };
+
+    let result = usage_ctx
+        .scope(|| async {
+            match &cli.command {
+                None => {
+                    // No command provided - show quick overview
+                    show_overview().await
+                }
+                Some(Commands::List) => list::run(&cli).await,
+                Some(Commands::Setup { connector }) => setup::run(&cli, connector.as_deref()).await,
+                Some(Commands::Search {
+                    connector_or_query,
+                    query,
+                    limit,
+                    profile,
+                    connectors,
+                    merge,
+                    add,
+                    exclude,
+                }) => {
+                    search::run(
+                        &cli,
+                        connector_or_query,
+                        query.as_deref(),
+                        *limit,
+                        profile.as_deref(),
+                        connectors.as_deref(),
+                        merge,
+                        add.as_deref(),
+                        exclude.as_deref(),
+                        false, // web flag removed
+                    )
+                    .await
+                }
+                Some(Commands::Get { connector, id }) => get::run(&cli, connector, id).await,
+                Some(Commands::Fetch { input }) => fetch::run(&cli, input).await,
+                Some(Commands::Formats) => fetch::show_formats(&cli).await,
+                Some(Commands::Config { action }) => config::run(&cli, action.clone()).await,
+                Some(Commands::Connectors) => connectors::run(&cli).await,
+                Some(Commands::Tools { connector }) => tools::run(&cli, connector.as_deref()).await,
+                Some(Commands::Pricing {
+                    connector,
+                    tool,
+                    model,
+                }) => {
+                    pricing::run(
+                        &cli,
+                        connector.as_deref(),
+                        tool.as_deref(),
+                        model.as_deref(),
+                    )
+                    .await
+                }
+                Some(Commands::Usage {
+                    connector,
+                    tool,
+                    run,
+                    last,
+                }) => {
+                    usage::run(
+                        &cli,
+                        connector.as_deref(),
+                        tool.as_deref(),
+                        run.as_deref(),
+                        *last,
+                    )
+                    .await
+                }
+                Some(Commands::Call {
+                    connector,
+                    tool,
+                    args,
+                    params,
+                }) => call::run(&cli, connector, tool, args.as_deref(), params).await,
+
+                // Google connectors
+                Some(Commands::GoogleCalendar { tool }) => {
+                    connectors::handle_google_calendar(&cli, tool.clone()).await
+                }
+                Some(Commands::GoogleDrive { tool }) => {
+                    connectors::handle_google_drive(&cli, tool.clone()).await
+                }
+                Some(Commands::GoogleGmail { tool }) => {
+                    connectors::handle_google_gmail(&cli, tool.clone()).await
+                }
+                Some(Commands::GooglePeople { tool }) => {
+                    connectors::handle_google_people(&cli, tool.clone()).await
+                }
+                Some(Commands::GoogleScholar { tool }) => {
+                    connectors::handle_google_scholar(&cli, tool.clone()).await
+                }
+
+                // LLM Search connectors
+                Some(Commands::OpenaiSearch { tool }) => {
+                    connectors::handle_openai_search(&cli, tool.clone()).await
+                }
+                Some(Commands::AnthropicSearch { tool }) => {
+                    connectors::handle_anthropic_search(&cli, tool.clone()).await
+                }
+                Some(Commands::GeminiSearch { tool }) => {
+                    connectors::handle_gemini_search(&cli, tool.clone()).await
+                }
+                Some(Commands::PerplexitySearch { tool }) => {
+                    connectors::handle_perplexity_search(&cli, tool.clone()).await
+                }
+                Some(Commands::XaiSearch { tool }) => {
+                    connectors::handle_xai_search(&cli, tool.clone()).await
+                }
+                Some(Commands::Exa { tool }) => connectors::handle_exa(&cli, tool.clone()).await,
+                Some(Commands::TavilySearch { tool }) => {
+                    connectors::handle_tavily_search(&cli, tool.clone()).await
+                }
+                Some(Commands::SerperSearch { tool }) => {
+                    connectors::handle_serper_search(&cli, tool.clone()).await
+                }
+                Some(Commands::SerpapiSearch { tool }) => {
+                    connectors::handle_serpapi_search(&cli, tool.clone()).await
+                }
+                Some(Commands::FirecrawlSearch { tool }) => {
+                    connectors::handle_firecrawl_search(&cli, tool.clone()).await
+                }
+                Some(Commands::ParallelSearch { tool }) => {
+                    connectors::handle_parallel_search(&cli, tool.clone()).await
+                }
+
+                // Productivity connectors
+                Some(Commands::Atlassian { tool }) => {
+                    connectors::handle_atlassian(&cli, tool.clone()).await
+                }
+                Some(Commands::MicrosoftGraph { tool }) => {
+                    connectors::handle_microsoft_graph(&cli, tool.clone()).await
+                }
+                Some(Commands::Imap { tool }) => connectors::handle_imap(&cli, tool.clone()).await,
+
+                // For now, other connectors fall back to the call command
+                // Connector-specific subcommands with proper CLI flags
+                Some(Commands::Localfs { tool }) => {
+                    connectors::handle_localfs(&cli, tool.clone()).await
+                }
+                Some(Commands::Youtube { tool }) => {
+                    connectors::handle_youtube(&cli, tool.clone()).await
+                }
+                Some(Commands::Hackernews { tool }) => {
+                    connectors::handle_hackernews(&cli, tool.clone()).await
+                }
+                Some(Commands::Arxiv { tool }) => {
+                    connectors::handle_arxiv(&cli, tool.clone()).await
+                }
+                Some(Commands::Github { tool }) => {
+                    connectors::handle_github(&cli, tool.clone()).await
+                }
+                Some(Commands::Reddit { tool }) => {
+                    connectors::handle_reddit(&cli, tool.clone()).await
+                }
+                Some(Commands::Web { tool }) => connectors::handle_web(&cli, tool.clone()).await,
+                Some(Commands::Wikipedia { tool }) => {
+                    connectors::handle_wikipedia(&cli, tool.clone()).await
+                }
+                Some(Commands::Pubmed { tool }) => {
+                    connectors::handle_pubmed(&cli, tool.clone()).await
+                }
+                Some(Commands::SemanticScholar { tool }) => {
+                    connectors::handle_semantic_scholar(&cli, tool.clone()).await
+                }
+                Some(Commands::Slack { tool }) => {
+                    connectors::handle_slack(&cli, tool.clone()).await
+                }
+                Some(Commands::X { tool }) => connectors::handle_x(&cli, tool.clone()).await,
+                Some(Commands::Discord { tool }) => {
+                    connectors::handle_discord(&cli, tool.clone()).await
+                }
+                Some(Commands::Rss { tool }) => connectors::handle_rss(&cli, tool.clone()).await,
+                Some(Commands::Biorxiv { tool }) => {
+                    connectors::handle_biorxiv(&cli, tool.clone()).await
+                }
+                Some(Commands::Scihub { tool }) => {
+                    connectors::handle_scihub(&cli, tool.clone()).await
+                }
+                Some(Commands::Macos { tool }) => {
+                    connectors::handle_macos(&cli, tool.clone()).await
+                }
+                Some(Commands::Spotlight { tool }) => {
+                    connectors::handle_spotlight(&cli, tool.clone()).await
+                }
+            }
+        })
+        .await;
 
     if let Err(e) = result {
         eprintln!("{}: {}", "Error".red().bold(), e);

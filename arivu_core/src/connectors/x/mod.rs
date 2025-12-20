@@ -295,7 +295,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("get_profile"),
                 title: None,
-                description: Some(Cow::Borrowed("Retrieves a user's profile information.")),
+                description: Some(Cow::Borrowed("User profile by username (strip @).")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -318,7 +318,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("search_tweets"),
                 title: None,
-                description: Some(Cow::Borrowed("Searches for tweets matching a query.")),
+                description: Some(Cow::Borrowed("Keyword search for tweets.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -345,7 +345,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("get_followers"),
                 title: None,
-                description: Some(Cow::Borrowed("Retrieves a list of followers for a user.")),
+                description: Some(Cow::Borrowed("Followers of a user (paginated).")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -376,9 +376,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("get_tweet"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Retrieves details of a specific tweet given its ID",
-                )),
+                description: Some(Cow::Borrowed("Tweet details by tweet_id.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -401,9 +399,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("get_home_timeline"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Retrieves tweets from the user's home timeline.",
-                )),
+                description: Some(Cow::Borrowed("Home timeline for authenticated user.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -430,9 +426,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("fetch_tweets_and_replies"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Fetches tweets and replies for a specific user.",
-                )),
+                description: Some(Cow::Borrowed("User tweets + replies.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -463,9 +457,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("search_profiles"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Searches for user profiles matching a query.",
-                )),
+                description: Some(Cow::Borrowed("Search user profiles by query.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -496,9 +488,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("get_direct_message_conversations"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Gets direct message conversations for the authenticated user.",
-                )),
+                description: Some(Cow::Borrowed("DM conversations for auth user.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -525,9 +515,7 @@ impl Connector for XConnector {
             Tool {
                 name: Cow::Borrowed("send_direct_message"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Sends a direct message to a specified conversation.",
-                )),
+                description: Some(Cow::Borrowed("Send DM to conversation_id.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

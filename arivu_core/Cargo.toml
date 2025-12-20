@@ -15,6 +15,7 @@ async-trait = "0.1.89"
 serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9"
+toml = "0.8.21"
 tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "io-std", "process"] }
 thiserror = "1.0.69"
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "cookies", "rustls-tls"] }
@@ -150,6 +151,17 @@ localfs = ["dep:lopdf", "dep:zip", "dep:quick-xml", "dep:scraper"]
 
 # Browser cookie extraction
 browser-cookies = ["dep:rookie", "dep:publicsuffix"]
+
+# Apple Ecosystem connectors (macOS only)
+# These use AppleScript to interact with native macOS apps
+# No extra dependencies - just platform-gated compilation
+apple-mail = []      # Mail.app - read, send, draft emails
+apple-notes = []     # Notes.app - create, read, search notes
+apple-messages = []  # Messages.app - iMessage and SMS
+apple-reminders = [] # Reminders.app - task management
+apple-contacts = []  # Contacts.app - contact lookup
+# Composite feature to enable all Apple connectors
+apple-ecosystem = ["apple-mail", "apple-notes", "apple-messages", "apple-reminders", "apple-contacts"]
 
 # Composite, LLM-friendly macro tools (optional)
 llm-macros = []

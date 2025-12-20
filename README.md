@@ -164,7 +164,23 @@ See [Smart Resolver Documentation](docs/SMART_RESOLVER.md) for the complete list
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Pre-built Binaries
+
+Ready-made binaries are available from the [GitHub Releases](https://github.com/srv1n/arivu/releases) page. Choose one of the following methods:
+
+#### Install Script (Recommended)
+
+The install script automatically downloads the correct binary for your platform:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
+
+# Uninstall
+rm -f ~/.local/bin/arivu
+rm -rf ~/.config/arivu
+```
+
+#### Homebrew (macOS/Linux)
 
 ```bash
 brew tap srv1n/tap
@@ -175,7 +191,9 @@ brew uninstall arivu
 brew untap srv1n/tap
 ```
 
-### From Source
+### Build from Source
+
+If you prefer to build from source or need to customize which connectors are included:
 
 ```bash
 git clone https://github.com/srv1n/arivu.git
@@ -188,16 +206,6 @@ cargo build --release -p arivu_cli --features full
 cargo build --release -p arivu_cli --features "arxiv,pubmed,hackernews"
 
 cp target/release/arivu ~/.local/bin/
-```
-
-### Install Script
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
-
-# Uninstall
-rm -f ~/.local/bin/arivu
-rm -rf ~/.config/arivu
 ```
 
 ## Federated Search

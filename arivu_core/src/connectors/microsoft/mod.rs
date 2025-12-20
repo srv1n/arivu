@@ -117,7 +117,7 @@ impl Connector for GraphConnector {
                 name: Cow::Borrowed("list_messages"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "List recent Outlook messages for the signed-in user. Set response_format=detailed for full Graph payload.",
+                    "List Outlook messages (requires explicit user permission).",
                 )),
                 input_schema: Arc::new(
                     json!({
@@ -138,7 +138,7 @@ impl Connector for GraphConnector {
                 name: Cow::Borrowed("list_events"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "List upcoming Outlook calendar events for the signed-in user. Set response_format=detailed for full Graph payload.",
+                    "List Outlook calendar events (requires explicit user permission).",
                 )),
                 input_schema: Arc::new(
                     json!({
@@ -155,12 +155,12 @@ impl Connector for GraphConnector {
                 annotations: None,
                 icons: None,
             },
-            Tool { name: Cow::Borrowed("get_message"), title: None, description: Some(Cow::Borrowed("Get a message by ID via Microsoft Graph.")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"}},"required":["message_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
-            Tool { name: Cow::Borrowed("send_mail"), title: None, description: Some(Cow::Borrowed("Send a simple email (subject/text body) to one or more recipients.")), input_schema: Arc::new(json!({"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body_text":{"type":"string"}},"required":["to","subject","body_text"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
-            Tool { name: Cow::Borrowed("create_draft"), title: None, description: Some(Cow::Borrowed("Create a draft message (returns message_id).")), input_schema: Arc::new(json!({"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body_text":{"type":"string"}},"required":["to","subject","body_text"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
-            Tool { name: Cow::Borrowed("upload_attachment_large"), title: None, description: Some(Cow::Borrowed("Upload a large attachment to a draft via Graph upload session.")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"},"filename":{"type":"string"},"mime_type":{"type":"string"},"data_base64":{"type":"string"}},"required":["message_id","filename","mime_type","data_base64"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
-            Tool { name: Cow::Borrowed("send_draft"), title: None, description: Some(Cow::Borrowed("Send a draft message by ID.")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"}},"required":["message_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
-            Tool { name: Cow::Borrowed("upload_attachment_large_from_path"), title: None, description: Some(Cow::Borrowed("Upload a large attachment to a draft from a local file path (no base64).")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"},"file_path":{"type":"string"},"filename":{"type":"string"},"mime_type":{"type":"string"}},"required":["message_id","file_path"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("get_message"), title: None, description: Some(Cow::Borrowed("Get a message by ID (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"}},"required":["message_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("send_mail"), title: None, description: Some(Cow::Borrowed("Send email (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body_text":{"type":"string"}},"required":["to","subject","body_text"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("create_draft"), title: None, description: Some(Cow::Borrowed("Create draft email (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body_text":{"type":"string"}},"required":["to","subject","body_text"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("upload_attachment_large"), title: None, description: Some(Cow::Borrowed("Upload attachment to draft (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"},"filename":{"type":"string"},"mime_type":{"type":"string"},"data_base64":{"type":"string"}},"required":["message_id","filename","mime_type","data_base64"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("send_draft"), title: None, description: Some(Cow::Borrowed("Send draft email (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"}},"required":["message_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("upload_attachment_large_from_path"), title: None, description: Some(Cow::Borrowed("Upload attachment from file path (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"message_id":{"type":"string"},"file_path":{"type":"string"},"filename":{"type":"string"},"mime_type":{"type":"string"}},"required":["message_id","file_path"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
             Tool {
                 name: Cow::Borrowed("auth_start"),
                 title: None,

@@ -501,7 +501,7 @@ impl Connector for SemanticScholarConnector {
             Tool {
                 name: Cow::Borrowed("search_papers"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for academic papers on Semantic Scholar.")),
+                description: Some(Cow::Borrowed("Search papers by query.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -543,7 +543,7 @@ impl Connector for SemanticScholarConnector {
             Tool {
                 name: Cow::Borrowed("get_paper_details"),
                 title: None,
-                description: Some(Cow::Borrowed("Get detailed information about a specific paper.")),
+                description: Some(Cow::Borrowed("Paper details by paper_id.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -561,7 +561,7 @@ impl Connector for SemanticScholarConnector {
             Tool {
                 name: Cow::Borrowed("get_related_papers"),
                 title: None,
-                description: Some(Cow::Borrowed("Get papers related to a specific paper.")),
+                description: Some(Cow::Borrowed("Related papers by paper_id.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

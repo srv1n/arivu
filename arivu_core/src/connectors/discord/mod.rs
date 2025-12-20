@@ -4,7 +4,7 @@ use crate::utils::structured_result_with_text;
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
 use rmcp::model::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use serenity::http::Http;
 use serenity::model::id::{ChannelId, GuildId};
@@ -158,7 +158,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("list_servers"),
                 title: None,
-                description: Some(Cow::Borrowed("List servers (guilds) the bot has access to")),
+                description: Some(Cow::Borrowed("List servers (guilds) for the bot.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {},
@@ -170,7 +170,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("get_server_info"),
                 title: None,
-                description: Some(Cow::Borrowed("Get details about a specific server")),
+                description: Some(Cow::Borrowed("Server details by guild_id.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -185,7 +185,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("list_channels"),
                 title: None,
-                description: Some(Cow::Borrowed("List channels in a server")),
+                description: Some(Cow::Borrowed("List channels in a server.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -200,7 +200,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("read_messages"),
                 title: None,
-                description: Some(Cow::Borrowed("Read message history from a channel")),
+                description: Some(Cow::Borrowed("Read recent messages in a channel.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -216,7 +216,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("send_message"),
                 title: None,
-                description: Some(Cow::Borrowed("Send a message to a channel")),
+                description: Some(Cow::Borrowed("Send a message to a channel.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -232,7 +232,7 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("search_messages"),
                 title: None,
-                description: Some(Cow::Borrowed("Search messages in a channel by content")),
+                description: Some(Cow::Borrowed("Search messages in a channel.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

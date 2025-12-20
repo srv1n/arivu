@@ -58,6 +58,7 @@ impl PdfExtractor {
     }
 
     #[cfg(feature = "localfs")]
+    #[allow(dead_code)]
     /// Extract bookmarks/outline as sections (without previews)
     fn extract_bookmarks_basic(&self, doc: &Document) -> Vec<Section> {
         // Try to get the document outline (bookmarks)
@@ -213,13 +214,12 @@ impl Extractor for PdfExtractor {
         let (start_page, end_page) = if let Ok(page) = section_id.parse::<u32>() {
             // Integer shorthand: just the page number (1-indexed)
             (page, page)
-        } else if section_id.starts_with("page:") {
-            let page: u32 = section_id[5..].parse().map_err(|_| {
+        } else if let Some(page_str) = section_id.strip_prefix("page:") {
+            let page: u32 = page_str.parse().map_err(|_| {
                 ConnectorError::InvalidParams(format!("Invalid page number: {}", section_id))
             })?;
             (page, page)
-        } else if section_id.starts_with("pages:") {
-            let range_str = &section_id[6..];
+        } else if let Some(range_str) = section_id.strip_prefix("pages:") {
             let parts: Vec<&str> = range_str.split('-').collect();
             if parts.len() != 2 {
                 return Err(ConnectorError::InvalidParams(format!(

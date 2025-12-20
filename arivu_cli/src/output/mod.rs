@@ -16,6 +16,8 @@ pub enum OutputData {
         connector: String,
         query: String,
         results: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Value>,
     },
     FederatedResults {
         query: String,
@@ -35,8 +37,16 @@ pub enum OutputData {
         connector: String,
         tool: String,
         result: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Value>,
     },
     ToolResult(Value),
+    PricingInfo {
+        report: Value,
+    },
+    UsageReport {
+        report: Value,
+    },
     Patterns(Vec<PatternInfo>),
     ConfigInfo(Value),
     ErrorMessage(String),
@@ -74,9 +84,14 @@ fn format_text_output(data: &OutputData) -> Result<()> {
             connector,
             query,
             results,
+            meta,
         } => {
             println!("Search results for '{}' using {}:", query, connector);
             println!("{}", serde_json::to_string_pretty(results)?);
+            if let Some(meta) = meta {
+                println!("Meta:");
+                println!("{}", serde_json::to_string_pretty(meta)?);
+            }
         }
         OutputData::FederatedResults {
             query,
@@ -113,9 +128,14 @@ fn format_text_output(data: &OutputData) -> Result<()> {
             connector,
             tool,
             result,
+            meta,
         } => {
             println!("Call {}.{}", connector, tool);
             println!("{}", serde_json::to_string_pretty(result)?);
+            if let Some(meta) = meta {
+                println!("Meta:");
+                println!("{}", serde_json::to_string_pretty(meta)?);
+            }
         }
         OutputData::ConfigInfo(config) => {
             println!("Configuration:");
@@ -126,6 +146,14 @@ fn format_text_output(data: &OutputData) -> Result<()> {
         }
         OutputData::ToolResult(result) => {
             println!("{}", serde_json::to_string_pretty(result)?);
+        }
+        OutputData::PricingInfo { report } => {
+            println!("Pricing:");
+            println!("{}", serde_json::to_string_pretty(report)?);
+        }
+        OutputData::UsageReport { report } => {
+            println!("Usage:");
+            println!("{}", serde_json::to_string_pretty(report)?);
         }
         OutputData::Patterns(patterns) => {
             for p in patterns {
@@ -153,6 +181,7 @@ fn format_pretty_output(data: &OutputData) -> Result<()> {
             connector,
             query,
             results,
+            meta,
         } => {
             println!(
                 "{} {} {} {}",
@@ -163,6 +192,11 @@ fn format_pretty_output(data: &OutputData) -> Result<()> {
             );
             println!();
             println!("{}", format_pretty(results));
+            if let Some(meta) = meta {
+                println!();
+                println!("{}", "Meta".dimmed());
+                println!("{}", format_pretty(meta));
+            }
         }
         OutputData::FederatedResults {
             query,
@@ -211,6 +245,7 @@ fn format_pretty_output(data: &OutputData) -> Result<()> {
             connector,
             tool,
             result,
+            meta,
         } => {
             println!(
                 "{} {}.{}",
@@ -220,9 +255,24 @@ fn format_pretty_output(data: &OutputData) -> Result<()> {
             );
             println!();
             println!("{}", format_pretty(result));
+            if let Some(meta) = meta {
+                println!();
+                println!("{}", "Meta".dimmed());
+                println!("{}", format_pretty(meta));
+            }
         }
         OutputData::ToolResult(result) => {
             println!("{}", format_pretty(result));
+        }
+        OutputData::PricingInfo { report } => {
+            println!("{}", "Pricing".cyan().bold());
+            println!();
+            println!("{}", format_pretty(report));
+        }
+        OutputData::UsageReport { report } => {
+            println!("{}", "Usage".cyan().bold());
+            println!();
+            println!("{}", format_pretty(report));
         }
         OutputData::ConfigInfo(config) => {
             println!("{}", "Configuration".cyan().bold());
@@ -255,6 +305,7 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             connector,
             query,
             results,
+            meta,
         } => {
             println!("# Search Results\n");
             println!("**Connector:** {}\n", connector);
@@ -262,6 +313,12 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             println!("```json");
             println!("{}", serde_json::to_string_pretty(results)?);
             println!("```\n");
+            if let Some(meta) = meta {
+                println!("**Meta:**\n");
+                println!("```json");
+                println!("{}", serde_json::to_string_pretty(meta)?);
+                println!("```\n");
+            }
         }
         OutputData::FederatedResults {
             query,
@@ -303,6 +360,7 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             connector,
             tool,
             result,
+            meta,
         } => {
             println!("# Call Result\n");
             println!("**Connector:** {}\n", connector);
@@ -310,6 +368,12 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             println!("```json");
             println!("{}", serde_json::to_string_pretty(result)?);
             println!("```\n");
+            if let Some(meta) = meta {
+                println!("**Meta:**\n");
+                println!("```json");
+                println!("{}", serde_json::to_string_pretty(meta)?);
+                println!("```\n");
+            }
         }
         OutputData::ConfigInfo(config) => {
             println!("# Configuration\n");
@@ -325,6 +389,18 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             println!("# Result\n");
             println!("```json");
             println!("{}", serde_json::to_string_pretty(result)?);
+            println!("```\n");
+        }
+        OutputData::PricingInfo { report } => {
+            println!("# Pricing\n");
+            println!("```json");
+            println!("{}", serde_json::to_string_pretty(report)?);
+            println!("```\n");
+        }
+        OutputData::UsageReport { report } => {
+            println!("# Usage\n");
+            println!("```json");
+            println!("{}", serde_json::to_string_pretty(report)?);
             println!("```\n");
         }
         OutputData::Patterns(patterns) => {

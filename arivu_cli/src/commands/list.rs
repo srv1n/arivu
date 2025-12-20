@@ -1,7 +1,8 @@
 use crate::cli::Cli;
 use crate::commands::Result;
 use crate::output::{format_output, OutputData};
-use arivu_core::ProviderRegistry;
+use arivu_core::auth_store::{AuthStore, FileAuthStore};
+use arivu_core::{ProviderRegistry, UsageManager};
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
 use owo_colors::OwoColorize;
 
@@ -75,6 +76,35 @@ pub async fn run(cli: &Cli) -> Result<()> {
 
 pub async fn create_registry() -> Result<ProviderRegistry> {
     // Use the core helper to build a registry with only feature-enabled connectors.
-    let registry = arivu_core::build_registry_enabled_only().await;
+    let registry = match UsageManager::new_default() {
+        Ok(usage) => {
+            arivu_core::build_registry_enabled_only_with_usage(std::sync::Arc::new(usage)).await
+        }
+        Err(err) => {
+            tracing::debug!(
+                "Usage manager init failed, continuing without metering: {}",
+                err
+            );
+            arivu_core::build_registry_enabled_only().await
+        }
+    };
+
+    // Load saved credentials from auth store and set them on each connector
+    let auth_store = FileAuthStore::new_default();
+    for provider_info in registry.list_providers() {
+        // Try to load credentials for this provider (by name and any aliases)
+        let names_to_try = [provider_info.name.as_str()];
+        for name in names_to_try {
+            if let Some(auth) = auth_store.load(name) {
+                if let Some(provider) = registry.get_provider(&provider_info.name) {
+                    let mut connector = provider.lock().await;
+                    // Silently set auth - errors are ok (connector might not need this auth)
+                    let _ = connector.set_auth_details(auth).await;
+                    break;
+                }
+            }
+        }
+    }
+
     Ok(registry)
 }

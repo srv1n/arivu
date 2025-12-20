@@ -79,14 +79,18 @@ impl Connector for GooglePeopleConnector {
             Tool {
                 name: Cow::Borrowed("list_connections"),
                 title: None,
-                description: Some(Cow::Borrowed("List contacts (names, emailAddresses).")),
+                description: Some(Cow::Borrowed(
+                    "List contacts (requires explicit user permission).",
+                )),
                 input_schema: Arc::new(json!({"type":"object","properties":{"page_size":{"type":"integer","minimum":1,"maximum":200},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":[]}).as_object().expect("Schema object").clone()),
                 output_schema: None, annotations: None, icons: None
             },
             Tool {
                 name: Cow::Borrowed("get_person"),
                 title: None,
-                description: Some(Cow::Borrowed("Get a person by resourceName (e.g. people/c123).")),
+                description: Some(Cow::Borrowed(
+                    "Get contact by resourceName (requires explicit user permission).",
+                )),
                 input_schema: Arc::new(json!({"type":"object","properties":{"resource_name":{"type":"string"},"person_fields":{"type":"string","description":"Comma-separated fields, e.g. names,emailAddresses,phoneNumbers"},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":["resource_name"]}).as_object().expect("Schema object").clone()),
                 output_schema: None, annotations: None, icons: None
             },

@@ -70,7 +70,7 @@ impl Connector for TavilySearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Tavily web/news search. Provide a clear question. Defaults to concise output; set response_format='detailed' to include raw payload.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Web/news search via Tavily.")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},

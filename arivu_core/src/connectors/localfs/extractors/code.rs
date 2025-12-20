@@ -27,7 +27,7 @@ impl CodeExtractor {
         match fs::read_to_string(path) {
             Ok(content) => Ok(content),
             Err(_) => {
-                let bytes = fs::read(path).map_err(|e| ConnectorError::Io(e))?;
+                let bytes = fs::read(path).map_err(ConnectorError::Io)?;
                 Ok(String::from_utf8_lossy(&bytes).into_owned())
             }
         }
@@ -294,8 +294,7 @@ impl Extractor for CodeExtractor {
         }
 
         // Handle line-based section IDs like "lines:10-50"
-        if section_id.starts_with("lines:") {
-            let range_str = &section_id[6..];
+        if let Some(range_str) = section_id.strip_prefix("lines:") {
             let parts: Vec<&str> = range_str.split('-').collect();
             if parts.len() != 2 {
                 return Err(ConnectorError::InvalidParams(format!(

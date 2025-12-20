@@ -14,8 +14,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Arivu MCP Server");
 
-    // Create provider registry with only feature-enabled connectors
-    let registry = arivu_core::build_registry_enabled_only().await;
+    // Create provider registry with only feature-enabled connectors (with usage metering)
+    let registry = match arivu_core::UsageManager::new_default() {
+        Ok(usage) => arivu_core::build_registry_enabled_only_with_usage(Arc::new(usage)).await,
+        Err(err) => {
+            error!(
+                "Usage manager init failed, continuing without metering: {}",
+                err
+            );
+            arivu_core::build_registry_enabled_only().await
+        }
+    };
 
     // Note: Set authentication at runtime via the MCP methods if needed.
 

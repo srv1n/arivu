@@ -97,6 +97,14 @@ macos-spotlight = ["arivu_core/macos-spotlight"]
 # EXPERIMENTAL - NOT READY: See arivu_core/src/connectors/apple_health/NOT_READY.md
 # apple-health = ["arivu_core/apple-health"]
 
+# Apple Ecosystem connectors (macOS only)
+apple-mail = ["arivu_core/apple-mail"]
+apple-notes = ["arivu_core/apple-notes"]
+apple-messages = ["arivu_core/apple-messages"]
+apple-reminders = ["arivu_core/apple-reminders"]
+apple-contacts = ["arivu_core/apple-contacts"]
+apple-ecosystem = ["arivu_core/apple-ecosystem"]
+
 # Local filesystem text extraction
 localfs = ["arivu_core/localfs"]
 

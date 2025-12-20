@@ -556,7 +556,7 @@ impl Connector for WebConnector {
                 Tool {
                     name: Cow::Borrowed("scrape_url"),
                     title: None,
-                    description: Some(Cow::Borrowed("Scrapes content from a URL")),
+                    description: Some(Cow::Borrowed("Extract readable text from a URL.")),
                     annotations: None,
                     input_schema: Arc::new(json!({
                         "type": "object",
@@ -585,7 +585,7 @@ impl Connector for WebConnector {
                 Tool {
                     name: Cow::Borrowed("scrape_with_config"),
                     title: None,
-                    description: Some(Cow::Borrowed("Scrape using a declarative config (selectors + URL template)")),
+                    description: Some(Cow::Borrowed("Scrape with custom selectors config.")),
                     annotations: None,
                     input_schema: Arc::new(json!({
                         "type": "object",

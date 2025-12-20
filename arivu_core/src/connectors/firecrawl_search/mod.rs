@@ -86,7 +86,9 @@ impl Connector for FirecrawlSearchConnector {
         let tool = Tool {
             name: Cow::Borrowed("search"),
             title: None,
-            description: Some(Cow::Borrowed("Firecrawl v2: blended search + scraping. Keep prompts simple; set scrape=false when you only need links. Use response_format to include or omit raw payload.")),
+            description: Some(Cow::Borrowed(
+                "Search + optional scraping via Firecrawl.",
+            )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {

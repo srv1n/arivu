@@ -26,7 +26,7 @@ impl HtmlExtractor {
         match fs::read_to_string(path) {
             Ok(content) => Ok(content),
             Err(_) => {
-                let bytes = fs::read(path).map_err(|e| ConnectorError::Io(e))?;
+                let bytes = fs::read(path).map_err(ConnectorError::Io)?;
                 Ok(String::from_utf8_lossy(&bytes).into_owned())
             }
         }
@@ -156,8 +156,8 @@ impl Extractor for HtmlExtractor {
         // - heading:N - heading by index
         let heading_idx: usize = if let Ok(idx) = section_id.parse::<usize>() {
             idx
-        } else if section_id.starts_with("heading:") {
-            section_id[8..].parse().map_err(|_| {
+        } else if let Some(heading_str) = section_id.strip_prefix("heading:") {
+            heading_str.parse().map_err(|_| {
                 ConnectorError::InvalidParams(format!("Invalid heading index: {}", section_id))
             })?
         } else {

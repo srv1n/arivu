@@ -18,7 +18,6 @@ pub struct DocxExtractor;
 struct DocxParagraph {
     text: String,
     style: Option<String>,
-    index: usize,
 }
 
 impl DocxExtractor {
@@ -28,7 +27,7 @@ impl DocxExtractor {
 
     /// Open DOCX archive
     fn open_archive(&self, path: &Path) -> Result<ZipArchive<File>, ConnectorError> {
-        let file = File::open(path).map_err(|e| ConnectorError::Io(e))?;
+        let file = File::open(path).map_err(ConnectorError::Io)?;
         ZipArchive::new(file)
             .map_err(|e| ConnectorError::Other(format!("Failed to open DOCX: {}", e)))
     }
@@ -113,8 +112,6 @@ impl DocxExtractor {
         let mut current_para_text = String::new();
         let mut current_style: Option<String> = None;
         let mut in_paragraph = false;
-        let mut para_index = 0;
-
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
@@ -122,7 +119,7 @@ impl DocxExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     match local_name {
@@ -150,7 +147,7 @@ impl DocxExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     if local_name == "pStyle" {
@@ -175,7 +172,7 @@ impl DocxExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     if local_name == "p" && in_paragraph {
@@ -183,9 +180,7 @@ impl DocxExtractor {
                             paragraphs.push(DocxParagraph {
                                 text: current_para_text.trim().to_string(),
                                 style: current_style.clone(),
-                                index: para_index,
                             });
-                            para_index += 1;
                         }
                         in_paragraph = false;
                     }
@@ -362,8 +357,8 @@ impl Extractor for DocxExtractor {
         // - heading:N - heading by index
         let heading_idx: usize = if let Ok(idx) = section_id.parse::<usize>() {
             idx
-        } else if section_id.starts_with("heading:") {
-            section_id[8..].parse().map_err(|_| {
+        } else if let Some(heading_str) = section_id.strip_prefix("heading:") {
+            heading_str.parse().map_err(|_| {
                 ConnectorError::InvalidParams(format!("Invalid heading number: {}", section_id))
             })?
         } else {
@@ -449,7 +444,7 @@ impl Extractor for DocxExtractor {
         let mut current_heading_idx = 0;
         let mut para_to_heading: Vec<usize> = Vec::new();
 
-        for (_idx, para) in paragraphs.iter().enumerate() {
+        for para in paragraphs.iter() {
             if let Some(ref style) = para.style {
                 if Self::is_heading_style(style).is_some() {
                     current_heading_idx = para_to_heading.len();

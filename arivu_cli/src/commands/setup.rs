@@ -518,6 +518,159 @@ const CONNECTORS: &[ConnectorSetupInfo] = &[
         }),
         aliases: &[],
     },
+    // === IMAP Email ===
+    ConnectorSetupInfo {
+        name: "imap",
+        display_name: "IMAP Email",
+        description: "Access emails via IMAP (Gmail, iCloud, Outlook, Yahoo, and more)",
+        auth_type: AuthType::MultipleFields,
+        env_vars: &[
+            ("IMAP_HOST", "Server hostname"),
+            ("IMAP_PORT", "Port (usually 993)"),
+            ("IMAP_USERNAME", "Email address"),
+            ("IMAP_PASSWORD", "Password or App Password"),
+        ],
+        required_fields: &[
+            FieldInfo {
+                name: "host",
+                label: "IMAP Server",
+                is_secret: false,
+                hint: Some("e.g., imap.gmail.com"),
+            },
+            FieldInfo {
+                name: "port",
+                label: "Port",
+                is_secret: false,
+                hint: Some("usually 993 for SSL"),
+            },
+            FieldInfo {
+                name: "username",
+                label: "Email Address",
+                is_secret: false,
+                hint: None,
+            },
+            FieldInfo {
+                name: "password",
+                label: "Password",
+                is_secret: true,
+                hint: Some("App Password recommended"),
+            },
+        ],
+        instructions: None, // We'll handle this specially with provider selection
+        aliases: &["email"],
+    },
+];
+
+/// IMAP provider presets for easy configuration
+struct ImapProvider {
+    name: &'static str,
+    display_name: &'static str,
+    host: &'static str,
+    port: u16,
+    help_url: &'static str,
+    app_password_steps: &'static [&'static str],
+}
+
+const IMAP_PROVIDERS: &[ImapProvider] = &[
+    ImapProvider {
+        name: "gmail",
+        display_name: "Gmail (Google)",
+        host: "imap.gmail.com",
+        port: 993,
+        help_url: "https://support.google.com/mail/answer/7126229",
+        app_password_steps: &[
+            "Go to https://myaccount.google.com/apppasswords",
+            "Sign in with your Google account",
+            "Select 'Mail' as the app and your device type",
+            "Click 'Generate' and copy the 16-character password",
+            "Use this App Password instead of your regular password",
+        ],
+    },
+    ImapProvider {
+        name: "icloud",
+        display_name: "iCloud Mail (Apple)",
+        host: "imap.mail.me.com",
+        port: 993,
+        help_url: "https://support.apple.com/en-us/102525",
+        app_password_steps: &[
+            "Go to https://appleid.apple.com/account/manage",
+            "Sign in with your Apple ID",
+            "In the 'Sign-In and Security' section, click 'App-Specific Passwords'",
+            "Click '+' to generate a new password",
+            "Enter a label (e.g., 'Arivu') and click 'Create'",
+            "Copy the generated password and use it below",
+        ],
+    },
+    ImapProvider {
+        name: "outlook",
+        display_name: "Outlook.com / Hotmail / Live",
+        host: "imap-mail.outlook.com",
+        port: 993,
+        help_url: "https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040",
+        app_password_steps: &[
+            "Go to https://account.live.com/proofs/manage/additional",
+            "Sign in and go to Security > Advanced security options",
+            "Under 'App passwords', click 'Create a new app password'",
+            "Copy the generated password and use it below",
+            "Note: You must have 2-step verification enabled",
+        ],
+    },
+    ImapProvider {
+        name: "office365",
+        display_name: "Microsoft 365 (Work/School)",
+        host: "outlook.office365.com",
+        port: 993,
+        help_url: "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/pop3-and-imap4/pop3-and-imap4",
+        app_password_steps: &[
+            "Note: Your admin must enable IMAP access for your account",
+            "Go to https://mysignins.microsoft.com/security-info",
+            "Add a new sign-in method and select 'App password'",
+            "Copy the generated password and use it below",
+            "Contact your IT admin if IMAP access is blocked",
+        ],
+    },
+    ImapProvider {
+        name: "yahoo",
+        display_name: "Yahoo Mail",
+        host: "imap.mail.yahoo.com",
+        port: 993,
+        help_url: "https://help.yahoo.com/kb/SLN4075.html",
+        app_password_steps: &[
+            "Go to https://login.yahoo.com/myaccount/security/",
+            "Sign in and scroll to 'App password' (requires 2-step verification)",
+            "Click 'Generate app password'",
+            "Select 'Other App' and enter 'Arivu'",
+            "Copy the generated password and use it below",
+        ],
+    },
+    ImapProvider {
+        name: "fastmail",
+        display_name: "Fastmail",
+        host: "imap.fastmail.com",
+        port: 993,
+        help_url: "https://www.fastmail.help/hc/en-us/articles/360058753834",
+        app_password_steps: &[
+            "Go to https://www.fastmail.com/settings/security/devicekeys",
+            "Click 'New App Password'",
+            "Enter a name (e.g., 'Arivu') and select 'IMAP' access",
+            "Click 'Generate Password'",
+            "Copy the password and use it below",
+        ],
+    },
+    ImapProvider {
+        name: "protonmail",
+        display_name: "ProtonMail (via Bridge)",
+        host: "127.0.0.1",
+        port: 1143,
+        help_url: "https://proton.me/support/protonmail-bridge-install",
+        app_password_steps: &[
+            "Install and run ProtonMail Bridge from https://proton.me/mail/bridge",
+            "Sign in to Bridge with your ProtonMail account",
+            "In Bridge, click your account to see IMAP credentials",
+            "Use the Bridge password shown (not your ProtonMail password)",
+            "Note: Bridge must be running for IMAP access to work",
+        ],
+    },
 ];
 
 pub async fn run(cli: &Cli, connector: Option<&str>) -> Result<()> {
@@ -703,6 +856,11 @@ async fn setup_connector(_cli: &Cli, connector_name: &str) -> Result<()> {
 }
 
 async fn configure_connector(info: &ConnectorSetupInfo) -> Result<()> {
+    // Special handling for IMAP with provider selection
+    if info.name == "imap" {
+        return configure_imap().await;
+    }
+
     match info.auth_type {
         AuthType::None => {
             println!(
@@ -914,6 +1072,195 @@ async fn configure_connector(info: &ConnectorSetupInfo) -> Result<()> {
     Ok(())
 }
 
+async fn configure_imap() -> Result<()> {
+    println!("{}", "IMAP Email Setup".bold().cyan());
+    println!();
+    println!("Select your email provider for automatic server configuration,");
+    println!("or choose 'Other' to enter settings manually.");
+    println!();
+
+    // Show provider options
+    println!("{}", "Email Providers:".bold());
+    for (i, provider) in IMAP_PROVIDERS.iter().enumerate() {
+        println!("  {}. {}", i + 1, provider.display_name);
+    }
+    println!(
+        "  {}. Other (manual configuration)",
+        IMAP_PROVIDERS.len() + 1
+    );
+    println!();
+
+    print!("Select provider [1-{}]: ", IMAP_PROVIDERS.len() + 1);
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let selection: usize = input.trim().parse().unwrap_or(0);
+
+    let (host, port, provider_name) = if selection > 0 && selection <= IMAP_PROVIDERS.len() {
+        let provider = &IMAP_PROVIDERS[selection - 1];
+
+        println!();
+        println!("{}", "━".repeat(60).dimmed());
+        println!();
+        println!(
+            "{} {}",
+            "Setting up:".bold().green(),
+            provider.display_name.cyan()
+        );
+        println!();
+
+        // Show help URL
+        println!("{}", "📖 Official documentation:".bold());
+        println!("   {}", provider.help_url.cyan().underline());
+        println!();
+
+        // Show app password instructions
+        println!("{}", "🔑 How to get an App Password:".bold());
+        for (i, step) in provider.app_password_steps.iter().enumerate() {
+            println!("   {}. {}", i + 1, step);
+        }
+        println!();
+        println!("{}", "━".repeat(60).dimmed());
+        println!();
+
+        println!(
+            "{} Server: {} | Port: {}",
+            "Auto-configured:".green().bold(),
+            provider.host.cyan(),
+            provider.port.to_string().cyan()
+        );
+        println!();
+
+        (
+            provider.host.to_string(),
+            provider.port.to_string(),
+            Some(provider.name),
+        )
+    } else if selection == IMAP_PROVIDERS.len() + 1 {
+        // Manual configuration
+        println!();
+        println!("{}", "Manual IMAP Configuration".bold());
+        println!();
+
+        print!("  {} (e.g., imap.example.com): ", "IMAP Server".bold());
+        io::stdout().flush()?;
+        let mut host = String::new();
+        io::stdin().read_line(&mut host)?;
+        let host = host.trim().to_string();
+
+        print!("  {} (usually 993 for SSL): ", "Port".bold());
+        io::stdout().flush()?;
+        let mut port = String::new();
+        io::stdin().read_line(&mut port)?;
+        let port = port.trim().to_string();
+        let port = if port.is_empty() {
+            "993".to_string()
+        } else {
+            port
+        };
+
+        (host, port, None)
+    } else {
+        println!("{}", "Invalid selection. Please try again.".red());
+        return Ok(());
+    };
+
+    if host.is_empty() {
+        println!("{}", "Server hostname is required.".red());
+        return Ok(());
+    }
+
+    // Get email address
+    print!("  {}: ", "Email Address".bold());
+    io::stdout().flush()?;
+    let mut username = String::new();
+    io::stdin().read_line(&mut username)?;
+    let username = username.trim().to_string();
+
+    if username.is_empty() {
+        println!("{}", "Email address is required.".red());
+        return Ok(());
+    }
+
+    // Get password
+    print!("  {} (App Password recommended): ", "Password".bold());
+    io::stdout().flush()?;
+    let password = read_secret()?;
+
+    if password.is_empty() {
+        println!("{}", "Password is required.".red());
+        return Ok(());
+    }
+
+    // Save credentials
+    let store = FileAuthStore::new_default();
+    let mut auth: AuthDetails = HashMap::new();
+    auth.insert("host".to_string(), host.clone());
+    auth.insert("port".to_string(), port.clone());
+    auth.insert("username".to_string(), username.clone());
+    auth.insert("password".to_string(), password);
+    auth.insert("security".to_string(), "tls".to_string());
+
+    // Store provider hint for potential future use
+    if let Some(prov) = provider_name {
+        auth.insert("provider".to_string(), prov.to_string());
+    }
+
+    store
+        .save("imap", &auth)
+        .map_err(|e| CommandError::InvalidConfig(format!("Failed to save credentials: {}", e)))?;
+
+    println!();
+    println!(
+        "{} IMAP credentials saved for {}",
+        "Saved!".green().bold(),
+        username.cyan()
+    );
+
+    // Test the connection
+    println!();
+    print!("{}", "Testing connection... ".dimmed());
+    io::stdout().flush()?;
+
+    match test_connector_auth("imap").await {
+        Ok(_) => {
+            println!("{}", "Success!".green().bold());
+            println!();
+            println!("{}", "You're all set! Try:".bold());
+            println!("  {}", "arivu imap list_mailboxes".cyan());
+            println!(
+                "  {}",
+                "arivu imap search_emails \"from:someone@example.com\"".cyan()
+            );
+        }
+        Err(e) => {
+            println!("{}", "Failed".red().bold());
+            println!();
+            println!("{} {}", "Error:".red().bold(), e.to_string().red());
+            println!();
+            println!("Troubleshooting tips:");
+            println!(
+                "  • Make sure you're using an {} (not your regular password)",
+                "App Password".bold()
+            );
+            println!("  • Check that IMAP is enabled in your email settings");
+            println!(
+                "  • Verify the server ({}) and port ({}) are correct",
+                host.cyan(),
+                port.cyan()
+            );
+            if provider_name.is_some() {
+                println!("  • Visit the documentation link above for provider-specific help");
+            }
+            println!();
+            println!("Re-run {} to try again.", "arivu setup imap".cyan());
+        }
+    }
+
+    Ok(())
+}
+
 async fn configure_oauth(info: &ConnectorSetupInfo, provider: OAuthProvider) -> Result<()> {
     println!("{}", "OAuth Authorization".bold());
     println!();
@@ -1116,7 +1463,16 @@ async fn test_connector_auth(connector_name: &str) -> Result<()> {
         .get_provider(connector_name)
         .ok_or_else(|| CommandError::ConnectorNotFound(connector_name.to_string()))?;
 
-    let c = provider.lock().await;
+    let mut c = provider.lock().await;
+
+    // Load saved credentials and set them on the connector
+    let store = FileAuthStore::new_default();
+    if let Some(auth) = store.load(connector_name) {
+        c.set_auth_details(auth).await.map_err(|e| {
+            CommandError::InvalidConfig(format!("Failed to set credentials: {}", e))
+        })?;
+    }
+
     c.test_auth()
         .await
         .map_err(|e| CommandError::InvalidConfig(format!("Authentication test failed: {}", e)))?;

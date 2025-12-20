@@ -234,6 +234,145 @@ pub fn clean_html_entities(text: &str) -> String {
         .replace("&amp;", "&")
 }
 
+/// Clean a URL by removing tracking parameters and truncating if too long.
+fn clean_url(url: &str) -> String {
+    // Try to parse and clean the URL
+    if let Ok(mut parsed) = url::Url::parse(url) {
+        // Remove common tracking/token parameters
+        let dominated_params: std::collections::HashSet<&str> = [
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+            "access_token",
+            "token",
+            "auth_token",
+            "api_key",
+            "key",
+            "fbclid",
+            "gclid",
+            "mc_eid",
+            "mc_cid",
+            "ref",
+            "source",
+            "unsub",
+            "redirect_uri",
+            "callback",
+        ]
+        .into_iter()
+        .collect();
+
+        let clean_pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| !dominated_params.contains(k.as_ref()))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+
+        if clean_pairs.is_empty() {
+            parsed.set_query(None);
+        } else {
+            parsed.query_pairs_mut().clear();
+            for (k, v) in clean_pairs {
+                parsed.query_pairs_mut().append_pair(&k, &v);
+            }
+        }
+
+        let cleaned = parsed.to_string();
+        // If still too long, just show domain + path (truncated)
+        if cleaned.len() > 80 {
+            let domain = parsed.host_str().unwrap_or("");
+            let path = parsed.path();
+            let short_path = if path.len() > 30 {
+                format!("{}...", &path[..27])
+            } else {
+                path.to_string()
+            };
+            format!("https://{}{}", domain, short_path)
+        } else {
+            cleaned
+        }
+    } else {
+        // Can't parse, just truncate if too long
+        if url.len() > 80 {
+            format!("{}...", &url[..77])
+        } else {
+            url.to_string()
+        }
+    }
+}
+
+/// Convert HTML to plain text by stripping tags and extracting readable content.
+/// Useful for email bodies and web content where LLM-friendly text is needed.
+/// Links are converted to markdown format [text](url) with cleaned URLs.
+pub fn html_to_text(html: &str) -> String {
+    use once_cell::sync::Lazy;
+    use regex::{Captures, Regex};
+
+    // Compile regexes once
+    static RE_SCRIPT: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap());
+    static RE_STYLE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap());
+    // Match <a href="url">text</a> - capture href and inner text
+    static RE_LINK: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#"(?is)<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>"#).unwrap()
+    });
+    static RE_BR: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)<br\s*/?>").unwrap());
+    static RE_BLOCK_CLOSE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?i)</(p|div|tr|li|h[1-6])>").unwrap());
+    static RE_BLOCK_OPEN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?i)<(p|div|tr|li|h[1-6])[^>]*>").unwrap());
+    static RE_TAGS: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]+>").unwrap());
+    static RE_SPACES: Lazy<Regex> = Lazy::new(|| Regex::new(r"[ \t]+").unwrap());
+    static RE_NL_SPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n[ \t]+").unwrap());
+    static RE_SPACE_NL: Lazy<Regex> = Lazy::new(|| Regex::new(r"[ \t]+\n").unwrap());
+    static RE_MULTI_NL: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n{3,}").unwrap());
+
+    let mut text = html.to_string();
+
+    // Remove script and style blocks entirely (including content)
+    text = RE_SCRIPT.replace_all(&text, "").to_string();
+    text = RE_STYLE.replace_all(&text, "").to_string();
+
+    // Convert links to markdown format [text](cleaned_url) before stripping other tags
+    text = RE_LINK
+        .replace_all(&text, |caps: &Captures| {
+            let url = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let link_text = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+            // Strip any nested tags from link text
+            let clean_text = RE_TAGS.replace_all(link_text, "").trim().to_string();
+            let clean_url = clean_url(url);
+
+            if clean_text.is_empty() || clean_text == url || clean_text == clean_url {
+                // Just show cleaned URL if no meaningful text
+                clean_url
+            } else {
+                format!("[{}]({})", clean_text, clean_url)
+            }
+        })
+        .to_string();
+
+    // Convert common block elements to newlines
+    text = RE_BR.replace_all(&text, "\n").to_string();
+    text = RE_BLOCK_CLOSE.replace_all(&text, "\n").to_string();
+    text = RE_BLOCK_OPEN.replace_all(&text, "\n").to_string();
+
+    // Remove all remaining HTML tags
+    text = RE_TAGS.replace_all(&text, "").to_string();
+
+    // Decode HTML entities
+    text = clean_html_entities(&text);
+
+    // Normalize whitespace
+    text = RE_SPACES.replace_all(&text, " ").to_string();
+    text = RE_NL_SPACE.replace_all(&text, "\n").to_string();
+    text = RE_SPACE_NL.replace_all(&text, "\n").to_string();
+    text = RE_MULTI_NL.replace_all(&text, "\n\n").to_string();
+
+    text.trim().to_string()
+}
+
 //     html_escape::decode_html_entities(text).into_owned().replace("\n", " ").replace("&#39;", "'")
 // }
 

@@ -102,7 +102,9 @@ impl Connector for XaiSearchConnector {
         let tool = Tool {
             name: Cow::Borrowed("search"),
             title: None,
-            description: Some(Cow::Borrowed("Live search across web and/or X via xAI. Provide a clear question; avoid adding years unless specified. response_format='concise' omits raw payload; use 'detailed' only when needed.")),
+            description: Some(Cow::Borrowed(
+                "Live search via xAI (web and/or X).",
+            )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
@@ -248,6 +250,9 @@ impl Connector for XaiSearchConnector {
             "answer": answer,
             "citations": citations
         });
+        if let Some(usage) = value.get("usage") {
+            data["usage"] = usage.clone();
+        }
         if detailed {
             data["raw"] = value.clone();
         }

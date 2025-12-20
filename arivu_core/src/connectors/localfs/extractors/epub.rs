@@ -86,7 +86,7 @@ impl EpubExtractor {
 
     /// Open EPUB archive
     fn open_archive(&self, path: &Path) -> Result<ZipArchive<File>, ConnectorError> {
-        let file = File::open(path).map_err(|e| ConnectorError::Io(e))?;
+        let file = File::open(path).map_err(ConnectorError::Io)?;
         ZipArchive::new(file)
             .map_err(|e| ConnectorError::Other(format!("Failed to open EPUB: {}", e)))
     }
@@ -171,7 +171,7 @@ impl EpubExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     match local_name {
@@ -202,7 +202,7 @@ impl EpubExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     match local_name {
@@ -246,7 +246,7 @@ impl EpubExtractor {
                     let local_name = std::str::from_utf8(name.as_ref())
                         .unwrap_or("")
                         .split(':')
-                        .last()
+                        .next_back()
                         .unwrap_or("");
 
                     match local_name {
@@ -424,12 +424,11 @@ impl Extractor for EpubExtractor {
                     // Fallback to filename-based title
                     item.href
                         .split('/')
-                        .last()
+                        .next_back()
                         .unwrap_or(&item.href)
                         .trim_end_matches(".xhtml")
                         .trim_end_matches(".html")
-                        .replace('_', " ")
-                        .replace('-', " ")
+                        .replace(['_', '-'], " ")
                 });
 
             // Extract preview (content after the title, ~150 chars)
@@ -525,9 +524,9 @@ impl Extractor for EpubExtractor {
         // - chapter:N - legacy format (still supported)
         let chapter_idx: usize = if let Ok(idx) = section_id.parse::<usize>() {
             idx
-        } else if section_id.starts_with("chapter:") {
+        } else if let Some(chapter_str) = section_id.strip_prefix("chapter:") {
             // Legacy format support
-            section_id[8..].parse().map_err(|_| {
+            chapter_str.parse().map_err(|_| {
                 ConnectorError::InvalidParams(format!("Invalid chapter number: {}", section_id))
             })?
         } else {

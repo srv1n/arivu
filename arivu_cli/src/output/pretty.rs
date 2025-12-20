@@ -56,6 +56,7 @@ const SNIPPET_KEYS: &[&str] = &[
     "snippet",
     "description",
     "summary",
+    "highlights", // Exa search highlights (array of strings)
     "abstract",
     "excerpt",
     "text",
@@ -64,29 +65,41 @@ const SNIPPET_KEYS: &[&str] = &[
     "preview", // Document section previews
 ];
 
-/// Keys for metadata (shown dimmed)
+/// Keys for metadata (shown dimmed) - ordered by importance
 const META_KEYS: &[&str] = &[
-    "channel_name",
+    // Identity fields first (critical for follow-up actions)
+    "uid", // IMAP message UID - critical for get_message
+    "id",  // Generic ID field
+    // Sender/recipient info
+    "from",
+    "to",
     "author",
     "authors",
     "user",
     "username",
-    "from",
+    "channel_name",
     "by",
-    "views",
-    "uploaded_at",
+    // Date/time fields
     "date",
+    "internal_date", // IMAP internal date
     "published",
+    "publishedDate", // Exa format
+    "crawlDate",     // Exa format
     "created_at",
     "updated_at",
+    "uploaded_at",
     "time",
     "timestamp",
+    // Stats and metadata
+    "size", // Message size
+    "views",
     "score",
     "points",
     "rating",
     "count",
-    "id",
+    "domain", // Exa domain field
     "source",
+    "message_id", // Email Message-ID header
 ];
 
 // ============================================================================
@@ -269,11 +282,9 @@ fn format_object_hierarchical(
 fn format_card(item: &Value, index: usize, width: usize) -> String {
     let mut output = String::new();
 
-    // Calculate max widths based on terminal width
+    // Calculate content width for wrapping (not truncation)
     let content_width = width.saturating_sub(CARD_INDENT + 2);
-    let title_max = content_width.min(80); // Titles up to 80 chars
-    let snippet_max = content_width.min(120); // Snippets a bit longer
-    let url_max = content_width.min(100); // URLs
+    let _ = content_width; // Used for future text wrapping
 
     let obj = match item.as_object() {
         Some(o) => o,
@@ -318,43 +329,35 @@ fn format_card(item: &Value, index: usize, width: usize) -> String {
     };
 
     if let Some(t) = &title {
-        let truncated = truncate_str(t, title_max);
-        output.push_str(&format!("{}{}\n", index_str, truncated.bold()));
+        output.push_str(&format!("{}{}\n", index_str, t.bold()));
     } else {
         // No title - show first available string field
         if let Some(first_str) = obj.values().find_map(|v| v.as_str()) {
-            let truncated = truncate_str(first_str, title_max);
-            output.push_str(&format!("{}{}\n", index_str, truncated.bold()));
+            output.push_str(&format!("{}{}\n", index_str, first_str.bold()));
         } else {
             output.push_str(&format!("{}(no title)\n", index_str));
         }
     }
 
-    // Line 2: URL (if present)
+    // URL: full clickable hyperlink
     if let Some(u) = &url {
-        let truncated = truncate_str(u, url_max);
-        output.push_str(&format!("      {}\n", truncated.blue()));
+        let hyperlink = format_hyperlink(u, u);
+        output.push_str(&format!("      {}\n", hyperlink.blue()));
     }
 
-    // Line 3: Snippet/description (if present)
+    // Snippet/description: show full content
     if let Some(s) = &snippet {
         let clean = clean_snippet(s);
         if !clean.is_empty() {
-            let truncated = truncate_str(&clean, snippet_max);
-            output.push_str(&format!("      {}\n", truncated.dimmed()));
+            output.push_str(&format!("      {}\n", clean.dimmed()));
         }
     }
 
-    // Line 4: Metadata (compact, on one line)
+    // Metadata: show each field on its own line for readability
     if !meta_fields.is_empty() {
-        let meta_str = meta_fields
-            .iter()
-            .take(4) // Max 4 metadata items
-            .map(|(k, v)| format!("{}: {}", k, v))
-            .collect::<Vec<_>>()
-            .join("  │  ");
-        let meta_truncated = truncate_str(&meta_str, content_width);
-        output.push_str(&format!("      {}\n", meta_truncated.dimmed()));
+        for (key, value) in meta_fields.iter().take(6) {
+            output.push_str(&format!("      {}: {}\n", key.dimmed(), value.dimmed()));
+        }
     }
 
     output
@@ -363,9 +366,22 @@ fn format_card(item: &Value, index: usize, width: usize) -> String {
 fn find_field(obj: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(val) = obj.get(*key) {
+            // Handle string values
             if let Some(s) = val.as_str() {
                 if !s.is_empty() {
                     return Some(s.to_string());
+                }
+            }
+            // Handle array values (e.g., Exa's highlights field)
+            if let Some(arr) = val.as_array() {
+                let strings: Vec<&str> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !strings.is_empty() {
+                    // Join multiple highlights with separator
+                    return Some(strings.join(" ... "));
                 }
             }
         }
@@ -380,22 +396,18 @@ fn extract_meta_fields(obj: &serde_json::Map<String, Value>) -> Vec<(String, Str
         if let Some(val) = obj.get(*key) {
             let formatted = match val {
                 Value::String(s) if !s.is_empty() => {
-                    // Truncate long strings
-                    if s.len() > 20 {
-                        format!("{}...", &s[..17])
+                    // For ISO dates, show just the date part (YYYY-MM-DD)
+                    if s.len() > 10 && s.contains('T') {
+                        s.split('T').next().unwrap_or(s).to_string()
                     } else {
                         s.clone()
                     }
                 }
                 Value::Number(n) => n.to_string(),
                 Value::Array(arr) => {
-                    // For arrays like "authors", join first few items
-                    let items: Vec<_> = arr.iter().take(2).filter_map(|v| v.as_str()).collect();
-                    if arr.len() > 2 {
-                        format!("{} +{}", items.join(", "), arr.len() - 2)
-                    } else {
-                        items.join(", ")
-                    }
+                    // For arrays like "authors", join all items
+                    let items: Vec<_> = arr.iter().filter_map(|v| v.as_str()).collect();
+                    items.join(", ")
                 }
                 _ => continue,
             };
@@ -602,6 +614,14 @@ fn terminal_width() -> usize {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(DEFAULT_WIDTH)
+}
+
+/// Format a URL as a clickable hyperlink using OSC 8 escape sequences.
+/// Supported by most modern terminals (iTerm2, Hyper, Windows Terminal, GNOME Terminal, etc.)
+fn format_hyperlink(url: &str, display_text: &str) -> String {
+    // OSC 8 format: \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
+    // Using \x07 (BEL) as terminator for broader compatibility
+    format!("\x1b]8;;{}\x07{}\x1b]8;;\x07", url, display_text)
 }
 
 #[cfg(test)]

@@ -758,7 +758,7 @@ impl Connector for PubMedConnector {
                 Tool {
                     name: Cow::Borrowed("search"),
                     title: None,
-                    description: Some(Cow::Borrowed("Search for articles in PubMed. Use MeSH terms and Boolean operators (AND, OR) for precise queries.")),
+                    description: Some(Cow::Borrowed("Search PubMed articles by query.")),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {
@@ -798,7 +798,7 @@ impl Connector for PubMedConnector {
                 Tool {
                     name: Cow::Borrowed("get_abstract"),
                     title: None,
-                    description: Some(Cow::Borrowed("Get the abstract and details of a PubMed article by PMID.")),
+                    description: Some(Cow::Borrowed("Abstract + metadata by PMID.")),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {

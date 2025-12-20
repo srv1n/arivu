@@ -6,10 +6,9 @@ use async_trait::async_trait;
 use reqwest::Client;
 use rmcp::model::*;
 use scraper::{Html, Selector};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{self, Duration};
 
@@ -176,7 +175,7 @@ impl Connector for GoogleScholarConnector {
             Tool {
                 name: Cow::Borrowed("search_papers"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for papers on Google Scholar")),
+                description: Some(Cow::Borrowed("Search Google Scholar papers.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

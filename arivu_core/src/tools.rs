@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::{
     auth::AuthDetails, auth_store::AuthStore, capabilities::ConnectorConfigSchema,
-    CallToolRequestParam, CallToolResult, Connector, ConnectorError, ListToolsResult,
-    PaginatedRequestParam, Tool,
+    metered::MeteredConnector, usage::UsageManager, CallToolRequestParam, CallToolResult,
+    Connector, ConnectorError, ListToolsResult, PaginatedRequestParam, Tool,
 };
 
 use serde_json::{Map, Value};
@@ -250,6 +250,13 @@ impl Tools {
         }
     }
 
+    /// Build Tools with metering enabled for all connectors.
+    pub async fn build_enabled_only_with_usage(usage: Arc<UsageManager>) -> Self {
+        let mut tools = Tools::build_enabled_only().await;
+        tools.wrap_connectors(usage);
+        tools
+    }
+
     /// List all tools across connectors, namespaced as "provider.tool".
     pub async fn list(&self) -> Result<ListToolsResult, ConnectorError> {
         let mut all = Vec::new();
@@ -346,6 +353,25 @@ impl Tools {
         let mut v: Vec<String> = self.connectors.keys().cloned().collect();
         v.sort();
         v
+    }
+
+    fn wrap_connectors(&mut self, usage: Arc<UsageManager>) {
+        let existing = std::mem::take(&mut self.connectors);
+        let mut wrapped = HashMap::new();
+        for (name, conn) in existing {
+            match Arc::try_unwrap(conn) {
+                Ok(mutex) => {
+                    let inner = mutex.into_inner();
+                    let boxed: Box<dyn Connector> =
+                        Box::new(MeteredConnector::new(inner, usage.clone()));
+                    wrapped.insert(name, Arc::new(Mutex::new(boxed)));
+                }
+                Err(conn) => {
+                    wrapped.insert(name, conn);
+                }
+            }
+        }
+        self.connectors = wrapped;
     }
 
     /// Describe a namespaced tool (provider.tool).

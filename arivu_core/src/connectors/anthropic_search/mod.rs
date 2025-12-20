@@ -115,7 +115,9 @@ impl Connector for AnthropicWebSearchConnector {
         let tool = Tool {
             name: Cow::Borrowed("search"),
             title: None,
-            description: Some(Cow::Borrowed("Grounded web answer via Claude Web Search. Provide a clear question; avoid adding years unless requested. Returns answer + citations. Use response_format='concise' by default; 'detailed' includes raw payload.")),
+            description: Some(Cow::Borrowed(
+                "Grounded web search via Anthropic; use for current info.",
+            )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
@@ -232,6 +234,9 @@ impl Connector for AnthropicWebSearchConnector {
             "answer": answer,
             "citations": citations
         });
+        if let Some(usage) = value.get("usage") {
+            data["usage"] = usage.clone();
+        }
         if detailed {
             data["raw"] = value.clone();
         }

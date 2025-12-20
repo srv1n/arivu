@@ -3,7 +3,7 @@ use crate::error::ConnectorError;
 use crate::utils::structured_result_with_text;
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::Client;
 use rmcp::model::*;
 use serde_json::{json, Value};
@@ -26,6 +26,201 @@ impl ParallelSearchConnector {
             .cloned()
             .or_else(|| std::env::var("PARALLEL_API_KEY").ok());
         Ok(Self { client, api_key })
+    }
+
+    fn get_headers(&self) -> Result<HeaderMap, ConnectorError> {
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set PARALLEL_API_KEY or use arivu setup parallel-search"
+                    .into(),
+            )
+        })?;
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            "x-api-key",
+            HeaderValue::from_str(key).map_err(|e| {
+                ConnectorError::InvalidInput(format!("Invalid API Key header: {}", e))
+            })?,
+        );
+        Ok(headers)
+    }
+
+    async fn create_monitor_impl(
+        &self,
+        args: &serde_json::Map<String, Value>,
+    ) -> Result<CallToolResult, ConnectorError> {
+        let query = args
+            .get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConnectorError::InvalidParams("Missing 'query'".into()))?;
+
+        let cadence = args
+            .get("cadence")
+            .and_then(|v| v.as_str())
+            .unwrap_or("daily");
+
+        let mut body = json!({
+            "query": query,
+            "cadence": cadence
+        });
+
+        // Webhook configuration
+        if let Some(webhook_url) = args.get("webhook_url").and_then(|v| v.as_str()) {
+            body["webhook"] = json!({
+                "url": webhook_url,
+                "event_types": ["monitor.event.detected", "monitor.execution.completed"]
+            });
+        }
+
+        // Output schema for structured events
+        if let Some(schema) = args.get("output_schema") {
+            body["output_schema"] = schema.clone();
+        }
+
+        // Metadata
+        if let Some(metadata) = args.get("metadata") {
+            body["metadata"] = metadata.clone();
+        }
+
+        let headers = self.get_headers()?;
+        let resp = self
+            .client
+            .post("https://api.parallel.ai/v1/monitors")
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await
+            .map_err(ConnectorError::HttpRequest)?;
+
+        let status = resp.status();
+        let value: Value = resp.json().await.map_err(ConnectorError::HttpRequest)?;
+
+        if !status.is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Parallel API error: {} - {}",
+                status, value
+            )));
+        }
+
+        let data = json!({
+            "provider": "parallel-ai",
+            "operation": "create_monitor",
+            "monitor": value
+        });
+
+        structured_result_with_text(&data, None)
+    }
+
+    async fn list_monitors_impl(&self) -> Result<CallToolResult, ConnectorError> {
+        let headers = self.get_headers()?;
+        let resp = self
+            .client
+            .get("https://api.parallel.ai/v1/monitors")
+            .headers(headers)
+            .send()
+            .await
+            .map_err(ConnectorError::HttpRequest)?;
+
+        let status = resp.status();
+        let value: Value = resp.json().await.map_err(ConnectorError::HttpRequest)?;
+
+        if !status.is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Parallel API error: {} - {}",
+                status, value
+            )));
+        }
+
+        let data = json!({
+            "provider": "parallel-ai",
+            "operation": "list_monitors",
+            "monitors": value.get("monitors").cloned().unwrap_or_else(|| json!([]))
+        });
+
+        structured_result_with_text(&data, None)
+    }
+
+    async fn get_monitor_events_impl(
+        &self,
+        args: &serde_json::Map<String, Value>,
+    ) -> Result<CallToolResult, ConnectorError> {
+        let monitor_id = args
+            .get("monitor_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConnectorError::InvalidParams("Missing 'monitor_id'".into()))?;
+
+        let headers = self.get_headers()?;
+        let resp = self
+            .client
+            .get(format!(
+                "https://api.parallel.ai/v1/monitors/{}/events",
+                monitor_id
+            ))
+            .headers(headers)
+            .send()
+            .await
+            .map_err(ConnectorError::HttpRequest)?;
+
+        let status = resp.status();
+        let value: Value = resp.json().await.map_err(ConnectorError::HttpRequest)?;
+
+        if !status.is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Parallel API error: {} - {}",
+                status, value
+            )));
+        }
+
+        let data = json!({
+            "provider": "parallel-ai",
+            "operation": "get_monitor_events",
+            "monitor_id": monitor_id,
+            "events": value.get("events").cloned().unwrap_or_else(|| json!([]))
+        });
+
+        structured_result_with_text(&data, None)
+    }
+
+    async fn cancel_monitor_impl(
+        &self,
+        args: &serde_json::Map<String, Value>,
+    ) -> Result<CallToolResult, ConnectorError> {
+        let monitor_id = args
+            .get("monitor_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConnectorError::InvalidParams("Missing 'monitor_id'".into()))?;
+
+        let headers = self.get_headers()?;
+        let resp = self
+            .client
+            .post(format!(
+                "https://api.parallel.ai/v1/monitors/{}/cancel",
+                monitor_id
+            ))
+            .headers(headers)
+            .send()
+            .await
+            .map_err(ConnectorError::HttpRequest)?;
+
+        let status = resp.status();
+        let value: Value = resp.json().await.map_err(ConnectorError::HttpRequest)?;
+
+        if !status.is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Parallel API error: {} - {}",
+                status, value
+            )));
+        }
+
+        let data = json!({
+            "provider": "parallel-ai",
+            "operation": "cancel_monitor",
+            "monitor_id": monitor_id,
+            "status": "canceled"
+        });
+
+        structured_result_with_text(&data, None)
     }
 }
 
@@ -53,12 +248,41 @@ impl Connector for ParallelSearchConnector {
             capabilities: self.capabilities().await,
             server_info: Implementation {
                 name: self.name().into(),
-                version: "0.1.0".into(),
+                version: "0.2.0".into(),
                 title: None,
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Use 'search' for parallel web search.".into()),
+            instructions: Some(
+r#"Parallel AI - Web search for AI agents. Use for monitoring, multi-query, and agent loops.
+
+PARALLEL IS BEST FOR (use these examples as guidance):
+
+1. CONTINUOUS MONITORING (unique capability):
+   "Alert me when OpenAI announces new models" → create_monitor
+   "Track when any YC company announces funding" → create_monitor
+   "Monitor competitor pricing pages daily" → create_monitor with webhook
+
+2. MULTI-QUERY PARALLEL RESEARCH:
+   "Compare AWS vs GCP vs Azure pricing" → search_queries=["AWS ML pricing", "GCP ML pricing", "Azure ML pricing"]
+   "Research autonomous vehicle regulations in 5 states" → search_queries=["CA AV laws", "TX AV laws", ...]
+
+3. AGENT LOOPS (token efficiency):
+   Agent iterating over 20 products → mode="agentic" saves 50% tokens per iteration
+   Iterative research refinement → mode="agentic"
+
+USE EXA INSTEAD FOR:
+- "Find VPs of Engineering at fintech startups" → Exa category="people"
+- "Series A climate tech companies" → Exa category="company"
+- "Find companies similar to Stripe" → Exa find_similar
+- "Latest transformer papers" → Exa category="research paper"
+- "What is Kubernetes?" → Exa answer endpoint
+- "NVIDIA SEC filings" → Exa category="financial report"
+- "LangChain GitHub repo" → Exa category="github"
+- "Tweets about Cursor IDE" → Exa category="tweet"
+
+DECISION RULE: If you need a specific entity type (people, companies, papers, tweets, repos), use Exa. If you need monitoring, multi-query, or are in an agent loop, use Parallel."#.into(),
+            ),
         })
     }
     async fn list_resources(
@@ -81,24 +305,173 @@ impl Connector for ParallelSearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Parallel AI web search. Provide a clear question for the 'objective' and optionally specific 'search_queries'.")), input_schema: Arc::new(json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "The primary search query or objective"},
-                "search_queries": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional: Specific search queries to execute in parallel. If not provided, 'query' will be used."
+        let search_tool = Tool {
+            name: Cow::Borrowed("search"),
+            title: None,
+            description: Some(Cow::Borrowed(
+                "Parallel web search for multiple queries (agent loops).",
+            )),
+            input_schema: Arc::new(json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language objective describing what you're looking for. Example: 'Find the latest AI agent frameworks and their key features'"
+                    },
+                    "search_queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword queries to run in parallel. Example: ['AI agent frameworks 2024', 'LangChain vs AutoGPT', 'CrewAI features']"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["one-shot", "agentic"],
+                        "description": "one-shot=comprehensive results (default), agentic=token-efficient for agent loops"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Maximum results to return"
+                    },
+                    "after_date": {
+                        "type": "string",
+                        "description": "Only include content published after this date. Format: YYYY-MM-DD. Example: '2024-01-01'"
+                    },
+                    "include_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Restrict to these domains. Example: ['techcrunch.com', 'wired.com']"
+                    },
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exclude these domains from results"
+                    },
+                    "max_age_seconds": {
+                        "type": "integer",
+                        "description": "Max cache age in seconds. Set low (e.g., 3600) for fresh content. Default uses cached results."
+                    }
                 },
-                "max_results": {"type": "integer", "default": 10, "description": "Maximum number of search results to return."},
-                "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Optional: Domains to include in the search."},
-                "exclude_domains": {"type": "array", "items": {"type": "string"}, "description": "Optional: Domains to exclude from the search."}
-            },
-            "required": ["query"],
-            "additionalProperties": false
-        }).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None };
+                "required": ["query"]
+            }).as_object().expect("Schema object").clone()),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
+        // Monitor tools
+        let create_monitor_tool = Tool {
+            name: Cow::Borrowed("create_monitor"),
+            title: None,
+            description: Some(Cow::Borrowed(
+                "Create a scheduled web monitor (optional webhook).",
+            )),
+            input_schema: Arc::new(json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to monitor. Example: 'OpenAI announcements' or 'Tesla price changes'"
+                    },
+                    "cadence": {
+                        "type": "string",
+                        "enum": ["hourly", "daily", "weekly"],
+                        "description": "How often to check. hourly=every hour, daily=once/day (default), weekly=once/week"
+                    },
+                    "webhook_url": {
+                        "type": "string",
+                        "description": "URL to receive webhook notifications when new content is detected"
+                    },
+                    "output_schema": {
+                        "type": "object",
+                        "description": "JSON Schema for structured event extraction"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Custom metadata to include with events (e.g., slack_channel_id)"
+                    }
+                },
+                "required": ["query"]
+            }).as_object().expect("Schema object").clone()),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
+        let list_monitors_tool = Tool {
+            name: Cow::Borrowed("list_monitors"),
+            title: None,
+            description: Some(Cow::Borrowed("List active monitors.")),
+            input_schema: Arc::new(
+                json!({
+                    "type": "object",
+                    "properties": {}
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone(),
+            ),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
+        let get_monitor_events_tool = Tool {
+            name: Cow::Borrowed("get_monitor_events"),
+            title: None,
+            description: Some(Cow::Borrowed("Get events from a monitor.")),
+            input_schema: Arc::new(
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "monitor_id": {
+                            "type": "string",
+                            "description": "The monitor ID (from create_monitor or list_monitors)"
+                        }
+                    },
+                    "required": ["monitor_id"]
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone(),
+            ),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
+        let cancel_monitor_tool = Tool {
+            name: Cow::Borrowed("cancel_monitor"),
+            title: None,
+            description: Some(Cow::Borrowed("Cancel an active monitor.")),
+            input_schema: Arc::new(
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "monitor_id": {
+                            "type": "string",
+                            "description": "The monitor ID to cancel"
+                        }
+                    },
+                    "required": ["monitor_id"]
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone(),
+            ),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
         Ok(ListToolsResult {
-            tools: vec![tool],
+            tools: vec![
+                search_tool,
+                create_monitor_tool,
+                list_monitors_tool,
+                get_monitor_events_tool,
+                cancel_monitor_tool,
+            ],
             next_cursor: None,
         })
     }
@@ -107,10 +480,18 @@ impl Connector for ParallelSearchConnector {
         &self,
         request: CallToolRequestParam,
     ) -> Result<CallToolResult, ConnectorError> {
-        if request.name.as_ref() != "search" {
-            return Err(ConnectorError::ToolNotFound);
-        }
         let args = request.arguments.unwrap_or_default();
+
+        match request.name.as_ref() {
+            "create_monitor" => return self.create_monitor_impl(&args).await,
+            "list_monitors" => return self.list_monitors_impl().await,
+            "get_monitor_events" => return self.get_monitor_events_impl(&args).await,
+            "cancel_monitor" => return self.cancel_monitor_impl(&args).await,
+            "search" => {}
+            _ => return Err(ConnectorError::ToolNotFound),
+        }
+
+        // Search implementation
         let query = args
             .get("query")
             .and_then(|v| v.as_str())
@@ -151,29 +532,42 @@ impl Connector for ParallelSearchConnector {
                     .collect::<Vec<_>>()
             });
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set PARALLEL_API_KEY or use rzn config set parallel-search {\"api_key\":\"...\"}".into()))?;
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(
-            "x-api-key",
-            HeaderValue::from_str(key).map_err(|e| {
-                ConnectorError::InvalidInput(format!("Invalid API Key header: {}", e))
-            })?,
-        );
+        let headers = self.get_headers()?;
 
         let mut body = json!({
             "objective": query,
             "search_queries": search_queries,
             "max_results": max_results,
             "excerpts": {
-                "max_chars_per_result": 10000 // Default as per documentation
+                "max_chars_per_result": 10000
             }
         });
+
+        // Mode: one-shot (comprehensive) vs agentic (token-efficient for loops)
+        if let Some(mode) = args.get("mode").and_then(|v| v.as_str()) {
+            body["mode"] = json!(mode);
+        }
+
+        // Source policy
+        let mut source_policy = json!({});
         if let Some(v) = include_domains {
-            body["include_domains"] = json!(v);
+            source_policy["include_domains"] = json!(v);
         }
         if let Some(v) = exclude_domains {
-            body["exclude_domains"] = json!(v);
+            source_policy["exclude_domains"] = json!(v);
+        }
+        if let Some(after_date) = args.get("after_date").and_then(|v| v.as_str()) {
+            source_policy["after_date"] = json!(after_date);
+        }
+        if !source_policy.as_object().unwrap().is_empty() {
+            body["source_policy"] = source_policy;
+        }
+
+        // Fetch policy for cache control
+        if let Some(max_age) = args.get("max_age_seconds").and_then(|v| v.as_u64()) {
+            body["fetch_policy"] = json!({
+                "max_age_seconds": max_age
+            });
         }
 
         let resp = self
@@ -194,16 +588,15 @@ impl Connector for ParallelSearchConnector {
             )));
         }
 
-        let mut data = json!({
+        let data = json!({
             "provider": "parallel-ai",
             "objective": query,
             "search_queries": search_queries,
             "max_results": max_results,
-            "results": value.get("results").cloned().unwrap_or_else(|| json!([])),
-            "raw": value.clone() // Include raw response for detailed inspection
+            "results": value.get("results").cloned().unwrap_or_else(|| json!([]))
         });
 
-        Ok(structured_result_with_text(&data, None)?)
+        structured_result_with_text(&data, None)
     }
 
     async fn list_prompts(

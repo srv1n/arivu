@@ -198,13 +198,13 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_user_info"),
                 title: None,
-                description: Some(Cow::Borrowed("Get information about a Reddit user")),
+                description: Some(Cow::Borrowed("Get a Reddit user profile by username")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "username": {
                             "type": "string",
-                            "description": "The username of the Reddit user"
+                            "description": "The username of the Reddit user (e.g., 'spez')"
                         }
                     },
                     "required": ["username"]
@@ -216,13 +216,15 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_subreddit_top_posts"),
                 title: None,
-                description: Some(Cow::Borrowed("Get top posts from a subreddit")),
+                description: Some(Cow::Borrowed(
+                    "Top posts in a specific subreddit (not keyword search)",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "subreddit": {
                             "type": "string",
-                            "description": "The name of the subreddit"
+                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
                         },
                         "limit": {
                             "type": "integer",
@@ -238,13 +240,15 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_subreddit_hot_posts"),
                 title: None,
-                description: Some(Cow::Borrowed("Get hot posts from a subreddit")),
+                description: Some(Cow::Borrowed(
+                    "Trending/hot posts in a specific subreddit",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "subreddit": {
                             "type": "string",
-                            "description": "The name of the subreddit"
+                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
                         },
                         "limit": {
                             "type": "integer",
@@ -260,13 +264,15 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_subreddit_new_posts"),
                 title: None,
-                description: Some(Cow::Borrowed("Get new posts from a subreddit")),
+                description: Some(Cow::Borrowed(
+                    "Newest posts in a specific subreddit",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "subreddit": {
                             "type": "string",
-                            "description": "The name of the subreddit"
+                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
                         },
                         "limit": {
                             "type": "integer",
@@ -282,13 +288,13 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_subreddit_info"),
                 title: None,
-                description: Some(Cow::Borrowed("Get information about a subreddit")),
+                description: Some(Cow::Borrowed("Get subreddit metadata by name")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "subreddit": {
                             "type": "string",
-                            "description": "The name of the subreddit"
+                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
                         }
                     },
                     "required": ["subreddit"]
@@ -300,7 +306,9 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("search_reddit"),
                 title: None,
-                description: Some(Cow::Borrowed("Search Reddit for posts")),
+                description: Some(Cow::Borrowed(
+                    "Keyword search for posts (use when you have query terms)",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -319,7 +327,7 @@ impl Connector for RedditConnector {
                         },
                         "subreddit": {
                             "type": "string",
-                            "description": "Filter by subreddit name (e.g., 'rust')"
+                            "description": "Optional subreddit filter (e.g., 'rust' or 'r/rust')"
                         },
                         "flair": {
                             "type": "string",
@@ -360,13 +368,15 @@ impl Connector for RedditConnector {
             Tool {
                 name: Cow::Borrowed("get_post_details"),
                 title: None,
-                description: Some(Cow::Borrowed("Get detailed information about a Reddit post including comments")),
+                description: Some(Cow::Borrowed(
+                    "Post details and comments; requires a post URL",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "post_url": {
                             "type": "string",
-                            "description": "The URL of the Reddit post"
+                            "description": "Full Reddit post URL (not post ID)"
                         },
                         "comment_limit": {
                             "type": "integer",

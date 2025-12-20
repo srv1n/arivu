@@ -207,6 +207,41 @@ pub enum Commands {
         connector: Option<String>,
     },
 
+    /// Show pricing info for tools (if available)
+    #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
+  arivu pricing                 List all pricing entries
+  arivu pricing exa             Pricing for all Exa tools
+  arivu pricing exa search      Pricing for Exa search tool
+  arivu pricing openai-search search --model o4-mini")]
+    Pricing {
+        /// Connector name to filter (optional)
+        connector: Option<String>,
+        /// Tool name to filter (optional)
+        tool: Option<String>,
+        /// Filter by model (optional)
+        #[arg(long)]
+        model: Option<String>,
+    },
+
+    /// Show usage totals (overall or filtered)
+    #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
+  arivu usage                   Show overall usage totals
+  arivu usage --last            Show usage for the most recent run
+  arivu usage --run run-123     Show usage for a specific run
+  arivu usage exa search        Show usage for Exa search tool")]
+    Usage {
+        /// Connector name to filter (optional)
+        connector: Option<String>,
+        /// Tool name to filter (optional)
+        tool: Option<String>,
+        /// Filter by run id
+        #[arg(long)]
+        run: Option<String>,
+        /// Show only the most recent run
+        #[arg(long, conflicts_with = "run")]
+        last: bool,
+    },
+
     /// Call a tool directly from a connector
     ///
     /// You can use the simplified syntax: `arivu <connector> <tool> [args...]`

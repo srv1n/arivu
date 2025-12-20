@@ -19,9 +19,9 @@ pub use types::*;
 
 /// Expand `~` to the user's home directory
 fn expand_path(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]);
+            return home.join(stripped);
         }
     } else if path == "~" {
         if let Some(home) = dirs::home_dir() {
@@ -160,7 +160,7 @@ impl LocalFsConnector {
         };
 
         let text = serde_json::to_string(&result)?;
-        Ok(structured_result_with_text(&result, Some(text))?)
+        structured_result_with_text(&result, Some(text))
     }
 
     async fn get_file_info(
@@ -207,7 +207,7 @@ impl LocalFsConnector {
         };
 
         let text = serde_json::to_string(&file_info)?;
-        Ok(structured_result_with_text(&file_info, Some(text))?)
+        structured_result_with_text(&file_info, Some(text))
     }
 
     async fn extract_text(
@@ -234,7 +234,7 @@ impl LocalFsConnector {
 
         let text_content = extractor.extract_text(&path_obj)?;
         let text = serde_json::to_string(&text_content)?;
-        Ok(structured_result_with_text(&text_content, Some(text))?)
+        structured_result_with_text(&text_content, Some(text))
     }
 
     async fn get_structure(
@@ -256,7 +256,7 @@ impl LocalFsConnector {
 
         let structure = extractor.get_structure(&path_obj)?;
         let text = serde_json::to_string(&structure)?;
-        Ok(structured_result_with_text(&structure, Some(text))?)
+        structured_result_with_text(&structure, Some(text))
     }
 
     async fn get_section(
@@ -285,7 +285,7 @@ impl LocalFsConnector {
 
         let section_content = extractor.get_section(&path_obj, section)?;
         let text = serde_json::to_string(&section_content)?;
-        Ok(structured_result_with_text(&section_content, Some(text))?)
+        structured_result_with_text(&section_content, Some(text))
     }
 
     async fn search_content(
@@ -319,7 +319,7 @@ impl LocalFsConnector {
 
         let search_result = extractor.search(&path_obj, query, context_lines)?;
         let text = serde_json::to_string(&search_result)?;
-        Ok(structured_result_with_text(&search_result, Some(text))?)
+        structured_result_with_text(&search_result, Some(text))
     }
 }
 
@@ -403,7 +403,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("list_files"),
                 title: None,
-                description: Some(Cow::Borrowed("List files in a directory")),
+                description: Some(Cow::Borrowed("List files in a directory.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -440,7 +440,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_file_info"),
                 title: None,
-                description: Some(Cow::Borrowed("Get metadata about a file")),
+                description: Some(Cow::Borrowed("File metadata by path.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -463,7 +463,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("extract_text"),
                 title: None,
-                description: Some(Cow::Borrowed("Extract all text from a file")),
+                description: Some(Cow::Borrowed("Extract text from a file.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -492,9 +492,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_structure"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Get document structure (TOC/headings/chapters)",
-                )),
+                description: Some(Cow::Borrowed("Document structure (TOC/headings).")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -517,7 +515,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_section"),
                 title: None,
-                description: Some(Cow::Borrowed("Get a specific section by identifier")),
+                description: Some(Cow::Borrowed("Get a section by identifier.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -544,7 +542,7 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("search_content"),
                 title: None,
-                description: Some(Cow::Borrowed("Search within a file")),
+                description: Some(Cow::Borrowed("Search within a file.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

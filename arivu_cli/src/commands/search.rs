@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::commands::usage_helpers::print_cost_summary;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::federated::{FederatedSearch, MergeMode, ProfileStore, SearchProfile};
@@ -130,11 +131,16 @@ async fn run_single_search(cli: &Cli, connector_name: &str, query: &str, limit: 
     } else {
         json!({})
     };
+    let meta_value = response
+        .meta
+        .as_ref()
+        .and_then(|m| serde_json::to_value(m).ok());
 
     let output_data = OutputData::SearchResults {
         connector: connector_name.to_string(),
         query: query.to_string(),
         results: results.clone(),
+        meta: meta_value.clone(),
     };
 
     match cli.output {
@@ -151,6 +157,8 @@ async fn run_single_search(cli: &Cli, connector_name: &str, query: &str, limit: 
         let text = serde_json::to_string_pretty(&results)?;
         copy_to_clipboard(&text)?;
     }
+
+    print_cost_summary(&cli.output, meta_value.as_ref());
 
     Ok(())
 }
@@ -274,6 +282,8 @@ async fn run_federated_search(
         let text = serde_json::to_string_pretty(&result_json)?;
         copy_to_clipboard(&text)?;
     }
+
+    print_cost_summary(&cli.output, None);
 
     Ok(())
 }

@@ -518,7 +518,7 @@ impl Connector for ArxivConnector {
             Tool {
                 name: Cow::Borrowed("search_papers"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for papers on arXiv.org. Supports field-specific queries like 'ti:neural AND au:hinton' for title and author searches.")),
+                description: Some(Cow::Borrowed("Search arXiv papers by query.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -559,7 +559,7 @@ impl Connector for ArxivConnector {
             Tool {
                 name: Cow::Borrowed("get_paper_details"),
                 title: None,
-                description: Some(Cow::Borrowed("Get detailed information about a specific arXiv paper by ID.")),
+                description: Some(Cow::Borrowed("Paper metadata by arXiv ID.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -583,7 +583,7 @@ impl Connector for ArxivConnector {
             Tool {
                 name: Cow::Borrowed("get_paper_pdf"),
                 title: None,
-                description: Some(Cow::Borrowed("Get the PDF content of a paper as base64 encoded data")),
+                description: Some(Cow::Borrowed("Paper PDF as base64 by arXiv ID.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

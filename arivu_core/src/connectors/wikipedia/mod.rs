@@ -449,7 +449,7 @@ impl Connector for WikipediaConnector {
             Tool {
                 name: Cow::Borrowed("search"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for articles on Wikipedia by keyword.")),
+                description: Some(Cow::Borrowed("Keyword search for articles.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -477,7 +477,7 @@ impl Connector for WikipediaConnector {
             Tool {
                 name: Cow::Borrowed("geosearch"),
                 title: None,
-                description: Some(Cow::Borrowed("Search for articles near a geographic location.")),
+                description: Some(Cow::Borrowed("Articles near a lat/lon.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -503,7 +503,7 @@ impl Connector for WikipediaConnector {
             Tool {
                 name: Cow::Borrowed("get_article"),
                 title: None,
-                description: Some(Cow::Borrowed("Get the content of a Wikipedia article by title.")),
+                description: Some(Cow::Borrowed("Article content by title.")),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

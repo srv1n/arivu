@@ -4,9 +4,12 @@ pub mod connectors;
 pub mod fetch;
 pub mod get;
 pub mod list;
+pub mod pricing;
 pub mod search;
 pub mod setup;
 pub mod tools;
+pub mod usage;
+pub mod usage_helpers;
 
 use owo_colors::OwoColorize;
 use thiserror::Error;

@@ -8,6 +8,7 @@ pub mod error;
 pub mod federated;
 pub mod logging;
 pub mod mcp_server;
+pub mod metered;
 pub mod oauth;
 pub mod oauth_client;
 pub mod prompts;
@@ -15,6 +16,8 @@ pub mod resolver;
 pub mod resources;
 pub mod tools;
 pub mod transport;
+pub mod usage;
+pub mod usage_context;
 pub mod utils;
 use std::sync::Arc;
 
@@ -27,6 +30,7 @@ pub use rmcp::model::{
 };
 
 use crate::error::ConnectorError;
+use crate::metered::MeteredConnector;
 use async_trait::async_trait;
 #[cfg(all(feature = "browser-cookies", target_os = "macos"))]
 pub use rookie::safari;
@@ -36,6 +40,11 @@ use std::collections::HashMap;
 // use crate::capabilities::Capabilities; // Keep for config schema
 use crate::auth::AuthDetails;
 pub use crate::capabilities::ConnectorConfigSchema; // Export for CLI usage
+pub use crate::usage::{
+    FileUsageStore, InMemoryUsageStore, PricingCatalog, RunSummary, UsageEvent, UsageManager,
+    UsageStore, UsageSummary,
+};
+pub use crate::usage_context::UsageContext;
 
 #[async_trait]
 pub trait Connector: Send + Sync {
@@ -119,6 +128,27 @@ impl ProviderRegistry {
     pub fn register_alias(&mut self, alias: &str, canonical_name: &str) {
         self.aliases
             .insert(alias.to_string(), canonical_name.to_string());
+    }
+
+    pub fn with_usage(self, usage: Arc<UsageManager>) -> ProviderRegistry {
+        let mut registry = ProviderRegistry::new();
+        registry.aliases = self.aliases;
+        for (name, provider) in self.providers {
+            match Arc::try_unwrap(provider) {
+                Ok(mutex) => {
+                    let inner = mutex.into_inner();
+                    let wrapped: Box<dyn Connector> =
+                        Box::new(MeteredConnector::new(inner, usage.clone()));
+                    registry
+                        .providers
+                        .insert(name, Arc::new(tokio::sync::Mutex::new(wrapped)));
+                }
+                Err(provider) => {
+                    registry.providers.insert(name, provider);
+                }
+            }
+        }
+        registry
     }
 
     pub fn get_provider(&self, name: &str) -> Option<&Arc<tokio::sync::Mutex<Box<dyn Connector>>>> {
@@ -373,6 +403,37 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
         registry.register_provider(Box::new(connector));
     }
 
+    // Apple Ecosystem connectors (macOS only)
+    #[cfg(all(target_os = "macos", feature = "apple-mail"))]
+    {
+        let connector = connectors::apple_mail::AppleMailConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
+    #[cfg(all(target_os = "macos", feature = "apple-notes"))]
+    {
+        let connector = connectors::apple_notes::AppleNotesConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
+    #[cfg(all(target_os = "macos", feature = "apple-messages"))]
+    {
+        let connector = connectors::apple_messages::AppleMessagesConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
+    #[cfg(all(target_os = "macos", feature = "apple-reminders"))]
+    {
+        let connector = connectors::apple_reminders::AppleRemindersConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
+    #[cfg(all(target_os = "macos", feature = "apple-contacts"))]
+    {
+        let connector = connectors::apple_contacts::AppleContactsConnector::new();
+        registry.register_provider(Box::new(connector));
+    }
+
     // EXPERIMENTAL - NOT READY: HealthKit data store not available on macOS
     // See: arivu_core/src/connectors/apple_health/NOT_READY.md
     // #[cfg(all(target_os = "macos", feature = "apple-health"))]
@@ -511,6 +572,12 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
     }
 
     registry
+}
+
+/// Build a registry and wrap connectors with usage metering.
+pub async fn build_registry_enabled_only_with_usage(usage: Arc<UsageManager>) -> ProviderRegistry {
+    let registry = build_registry_enabled_only().await;
+    registry.with_usage(usage)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

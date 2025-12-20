@@ -193,7 +193,7 @@ impl ImapConnector {
     async fn fetch_messages(
         &self,
         args: FetchMessagesArgs,
-    ) -> Result<Vec<MessageSummary>, ConnectorError> {
+    ) -> Result<FetchMessagesResponse, ConnectorError> {
         let config = self.ensure_config()?;
         let mailbox = args
             .mailbox
@@ -203,31 +203,61 @@ impl ImapConnector {
             limit = config.fetch_limit;
         }
         limit = limit.clamp(1, 500);
+        let offset = args.offset.unwrap_or(0);
+        let before_uid = args.before_uid;
 
+        let mailbox_clone = mailbox.clone();
         self.with_session(move |session| {
-            session.select(&mailbox).map_err(map_imap_error)?;
+            session.select(&mailbox_clone).map_err(map_imap_error)?;
             let mut uids: Vec<u32> = session
                 .uid_search("ALL")
                 .map_err(map_imap_error)?
                 .into_iter()
                 .collect();
 
+            let total = uids.len();
+
             if uids.is_empty() {
-                return Ok(Vec::new());
+                return Ok(FetchMessagesResponse {
+                    messages: Vec::new(),
+                    mailbox: mailbox_clone,
+                    total: 0,
+                    returned: 0,
+                    has_more: false,
+                    next_cursor: None,
+                });
             }
 
             uids.sort_unstable();
-            let take_start = if uids.len() > limit {
-                uids.len() - limit
-            } else {
-                0
-            };
-            let selected: Vec<String> = uids[take_start..]
+
+            // Apply before_uid filter (cursor-based pagination)
+            if let Some(before) = before_uid {
+                uids.retain(|&uid| uid < before);
+            }
+
+            // Calculate pagination window (from end, with offset)
+            let available = uids.len();
+            let skip_from_end = offset;
+            let end_idx = available.saturating_sub(skip_from_end);
+            let start_idx = end_idx.saturating_sub(limit);
+
+            let selected: Vec<String> = uids[start_idx..end_idx]
                 .iter()
                 .map(|uid| uid.to_string())
                 .collect();
-            let sequence = selected.join(",");
 
+            if selected.is_empty() {
+                return Ok(FetchMessagesResponse {
+                    messages: Vec::new(),
+                    mailbox: mailbox_clone,
+                    total,
+                    returned: 0,
+                    has_more: false,
+                    next_cursor: None,
+                });
+            }
+
+            let sequence = selected.join(",");
             let fetches = session
                 .uid_fetch(&sequence, "(UID ENVELOPE FLAGS INTERNALDATE RFC822.SIZE)")
                 .map_err(map_imap_error)?;
@@ -237,7 +267,26 @@ impl ImapConnector {
                 messages.push(build_message_summary(fetch));
             }
 
-            Ok(messages)
+            // Sort messages by UID descending (newest first)
+            messages.sort_by(|a, b| b.uid.cmp(&a.uid));
+
+            let returned = messages.len();
+            let has_more = start_idx > 0;
+            let next_cursor = if has_more {
+                // The smallest UID in current batch - use as before_uid for next page
+                messages.last().and_then(|m| m.uid)
+            } else {
+                None
+            };
+
+            Ok(FetchMessagesResponse {
+                messages,
+                mailbox: mailbox_clone,
+                total,
+                returned,
+                has_more,
+                next_cursor,
+            })
         })
         .await
     }
@@ -248,6 +297,8 @@ impl ImapConnector {
             .mailbox
             .unwrap_or_else(|| config.default_mailbox.clone());
         let include_raw = args.include_raw;
+        let include_html = args.include_html;
+        let include_headers = args.include_headers;
         let uid = args.uid;
 
         self.with_session(move |session| {
@@ -269,6 +320,32 @@ impl ImapConnector {
                 .as_ref()
                 .map(|body| parse_message_bodies(body))
                 .unwrap_or_default();
+
+            // Determine best content: prefer text, fall back to converted HTML
+            let (content, content_source) = if let Some(ref text) = text_body {
+                if !text.trim().is_empty() {
+                    (Some(text.clone()), "text".to_string())
+                } else if let Some(ref html) = html_body {
+                    let converted = crate::utils::html_to_text(html);
+                    if !converted.is_empty() {
+                        (Some(converted), "html_converted".to_string())
+                    } else {
+                        (None, "none".to_string())
+                    }
+                } else {
+                    (None, "none".to_string())
+                }
+            } else if let Some(ref html) = html_body {
+                let converted = crate::utils::html_to_text(html);
+                if !converted.is_empty() {
+                    (Some(converted), "html_converted".to_string())
+                } else {
+                    (None, "none".to_string())
+                }
+            } else {
+                (None, "none".to_string())
+            };
+
             let raw_encoded = if include_raw {
                 raw_body
                     .as_ref()
@@ -279,9 +356,14 @@ impl ImapConnector {
 
             Ok(MessageDetails {
                 summary,
-                headers,
-                text_body,
-                html_body,
+                content,
+                content_source,
+                // Only include headers if explicitly requested
+                headers: if include_headers { Some(headers) } else { None },
+                // Only include text_body if different from content (for debugging)
+                text_body: None, // Skip to reduce output size
+                // Only include HTML if explicitly requested
+                html_body: if include_html { html_body } else { None },
                 raw: raw_encoded,
             })
         })
@@ -316,6 +398,81 @@ impl ImapConnector {
                 mailbox,
                 query,
                 uids,
+            })
+        })
+        .await
+    }
+
+    async fn create_draft(
+        &self,
+        args: CreateDraftArgs,
+    ) -> Result<CreateDraftResponse, ConnectorError> {
+        let config = self.ensure_config()?;
+        let drafts_mailbox = args.drafts_mailbox.unwrap_or_else(|| "Drafts".to_string());
+
+        // Build RFC 822 message
+        let from = &config.username;
+        let date = chrono::Utc::now()
+            .format("%a, %d %b %Y %H:%M:%S +0000")
+            .to_string();
+        let message_id = format!(
+            "<{}.{:x}@arivu.local>",
+            chrono::Utc::now().timestamp_millis(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+
+        let mut headers = vec![
+            format!("From: {}", from),
+            format!("To: {}", args.to),
+            format!("Subject: {}", args.subject),
+            format!("Date: {}", date),
+            format!("Message-ID: {}", message_id),
+            "MIME-Version: 1.0".to_string(),
+            "Content-Type: text/plain; charset=utf-8".to_string(),
+        ];
+
+        if let Some(cc) = &args.cc {
+            if !cc.is_empty() {
+                headers.push(format!("Cc: {}", cc));
+            }
+        }
+
+        if let Some(bcc) = &args.bcc {
+            if !bcc.is_empty() {
+                headers.push(format!("Bcc: {}", bcc));
+            }
+        }
+
+        if let Some(in_reply_to) = &args.in_reply_to {
+            headers.push(format!("In-Reply-To: {}", in_reply_to));
+        }
+
+        if let Some(references) = &args.references {
+            headers.push(format!("References: {}", references));
+        }
+
+        // Combine headers and body
+        let message = format!("{}\r\n\r\n{}", headers.join("\r\n"), args.body);
+        let message_bytes: Vec<u8> = message.into_bytes();
+
+        let drafts_mailbox_clone = drafts_mailbox.clone();
+        self.with_session(move |session| {
+            // Append to drafts folder with \Draft flag
+            session
+                .append(&drafts_mailbox_clone, &message_bytes)
+                .flag(imap::types::Flag::Draft)
+                .flag(imap::types::Flag::Seen)
+                .finish()
+                .map_err(map_imap_error)?;
+
+            let msg = format!("Draft saved to {} folder", drafts_mailbox_clone);
+            Ok(CreateDraftResponse {
+                success: true,
+                mailbox: drafts_mailbox_clone,
+                message: msg,
             })
         })
         .await
@@ -465,6 +622,12 @@ struct FetchMessagesArgs {
     mailbox: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
+    /// Skip this many messages from the end (for offset-based pagination)
+    #[serde(default)]
+    offset: Option<usize>,
+    /// Only fetch messages with UID less than this (for cursor-based pagination)
+    #[serde(default)]
+    before_uid: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -472,6 +635,13 @@ struct GetMessageArgs {
     uid: u32,
     #[serde(default)]
     mailbox: Option<String>,
+    /// Include email headers (default: false, usually not needed)
+    #[serde(default)]
+    include_headers: bool,
+    /// Include the original HTML body (usually not needed, content is converted)
+    #[serde(default)]
+    include_html: bool,
+    /// Include base64-encoded raw message
     #[serde(default)]
     include_raw: bool,
 }
@@ -485,6 +655,38 @@ struct SearchArgs {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateDraftArgs {
+    /// Email recipient(s), comma-separated for multiple
+    to: String,
+    /// Email subject
+    subject: String,
+    /// Email body (plain text)
+    body: String,
+    /// Optional CC recipients, comma-separated
+    #[serde(default)]
+    cc: Option<String>,
+    /// Optional BCC recipients, comma-separated
+    #[serde(default)]
+    bcc: Option<String>,
+    /// Mailbox to save draft to (defaults to "Drafts")
+    #[serde(default)]
+    drafts_mailbox: Option<String>,
+    /// Optional In-Reply-To message ID for threading
+    #[serde(default)]
+    in_reply_to: Option<String>,
+    /// Optional References header for threading
+    #[serde(default)]
+    references: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateDraftResponse {
+    success: bool,
+    mailbox: String,
+    message: String,
+}
+
 #[derive(Debug, Serialize)]
 struct MailboxInfo {
     name: String,
@@ -492,6 +694,18 @@ struct MailboxInfo {
     attributes: Vec<String>,
     selectable: bool,
     subscribed: bool,
+}
+
+/// Paginated response for fetch_messages
+#[derive(Debug, Serialize)]
+struct FetchMessagesResponse {
+    messages: Vec<MessageSummary>,
+    mailbox: String,
+    total: usize,
+    returned: usize,
+    has_more: bool,
+    /// UID to use as before_uid for next page (smallest UID in this batch)
+    next_cursor: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -519,9 +733,20 @@ struct HeaderLine {
 #[derive(Debug, Serialize)]
 struct MessageDetails {
     summary: MessageSummary,
-    headers: Vec<HeaderLine>,
+    /// Clean, readable content - prefers text, falls back to converted HTML
+    content: Option<String>,
+    /// Content source: "text", "html_converted", or "none"
+    content_source: String,
+    /// Headers - only included if specifically requested
+    #[serde(skip_serializing_if = "Option::is_none")]
+    headers: Option<Vec<HeaderLine>>,
+    /// Original text body (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
     text_body: Option<String>,
+    /// Original HTML body - only included if specifically requested
+    #[serde(skip_serializing_if = "Option::is_none")]
     html_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     raw: Option<String>,
 }
 
@@ -640,13 +865,15 @@ impl Connector for ImapConnector {
                     ConnectorError::InvalidInput(format!("Invalid mailbox URI: {}", err))
                 })?
                 .to_string();
-            let messages = self
+            let response = self
                 .fetch_messages(FetchMessagesArgs {
                     mailbox: Some(mailbox.clone()),
                     limit: Some(config.fetch_limit),
+                    offset: None,
+                    before_uid: None,
                 })
                 .await?;
-            let body = serde_json::to_string_pretty(&messages)
+            let body = serde_json::to_string_pretty(&response)
                 .map_err(|err| ConnectorError::Other(err.to_string()))?;
             return Ok(vec![ResourceContents::text(body, uri)]);
         }
@@ -671,6 +898,8 @@ impl Connector for ImapConnector {
                 .get_message(GetMessageArgs {
                     uid,
                     mailbox: Some(mailbox),
+                    include_headers: false,
+                    include_html: false,
                     include_raw: false,
                 })
                 .await?;
@@ -714,14 +943,16 @@ impl Connector for ImapConnector {
                 name: Cow::Borrowed("fetch_messages"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Fetch recent message summaries from a mailbox.",
+                    "Fetch recent message summaries from a mailbox with pagination support. Returns messages sorted newest first, with total count and cursor for fetching more.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "mailbox": { "type": "string", "description": "Mailbox name (defaults to configured default)." },
-                            "limit": { "type": "integer", "description": "Maximum number of messages to return." }
+                            "mailbox": { "type": "string", "description": "Mailbox name (defaults to INBOX)." },
+                            "limit": { "type": "integer", "description": "Maximum number of messages to return (default 50, max 500)." },
+                            "offset": { "type": "integer", "description": "Skip this many messages from the end for offset-based pagination." },
+                            "before_uid": { "type": "integer", "description": "Only fetch messages with UID less than this value for cursor-based pagination. Use next_cursor from previous response." }
                         }
                     })
                     .as_object()
@@ -736,7 +967,7 @@ impl Connector for ImapConnector {
                 name: Cow::Borrowed("get_message"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Fetch a full message (headers and body) by UID.",
+                    "Fetch a message by UID. Returns clean text content by default.",
                 )),
                 input_schema: Arc::new(
                     json!({
@@ -744,7 +975,9 @@ impl Connector for ImapConnector {
                         "properties": {
                             "mailbox": { "type": "string", "description": "Mailbox containing the message." },
                             "uid": { "type": "integer", "description": "Message UID." },
-                            "include_raw": { "type": "boolean", "description": "Include base64 encoded raw message." }
+                            "include_headers": { "type": "boolean", "description": "Include email headers (default: false)." },
+                            "include_html": { "type": "boolean", "description": "Include original HTML body (default: false)." },
+                            "include_raw": { "type": "boolean", "description": "Include base64 encoded raw message (default: false)." }
                         },
                         "required": ["uid"]
                     })
@@ -771,6 +1004,35 @@ impl Connector for ImapConnector {
                             "limit": { "type": "integer", "description": "Maximum number of UIDs to return." }
                         },
                         "required": ["query"]
+                    })
+                    .as_object()
+                    .expect("Schema object")
+                    .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("create_draft"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Create a draft email and save it to the Drafts folder. Useful for preparing emails for later review and sending.",
+                )),
+                input_schema: Arc::new(
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "to": { "type": "string", "description": "Email recipient(s), comma-separated for multiple." },
+                            "subject": { "type": "string", "description": "Email subject line." },
+                            "body": { "type": "string", "description": "Email body (plain text)." },
+                            "cc": { "type": "string", "description": "CC recipients, comma-separated (optional)." },
+                            "bcc": { "type": "string", "description": "BCC recipients, comma-separated (optional)." },
+                            "drafts_mailbox": { "type": "string", "description": "Mailbox to save draft to (defaults to 'Drafts')." },
+                            "in_reply_to": { "type": "string", "description": "Message-ID of email being replied to (for threading)." },
+                            "references": { "type": "string", "description": "References header for email threading." }
+                        },
+                        "required": ["to", "subject", "body"]
                     })
                     .as_object()
                     .expect("Schema object")
@@ -818,6 +1080,12 @@ impl Connector for ImapConnector {
                     .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
                 let results = self.search(parsed).await?;
                 structured_result_with_text(&results, None)
+            }
+            "create_draft" => {
+                let parsed: CreateDraftArgs = serde_json::from_value(args_value)
+                    .map_err(|err| ConnectorError::InvalidParams(err.to_string()))?;
+                let result = self.create_draft(parsed).await?;
+                structured_result_with_text(&result, None)
             }
             _ => Err(ConnectorError::ToolNotFound),
         }

@@ -334,11 +334,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("search_content"),
                 title: Some("Search File Contents".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Full-text search across all Spotlight-indexed files. \
-                     Searches inside documents, PDFs, source code, etc. \
-                     Returns file paths matching the content query.",
-                )),
+                description: Some(Cow::Borrowed("Full-text search in Spotlight index.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -375,10 +371,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("search_by_name"),
                 title: Some("Search by File Name".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Search for files by their name. Faster than content search. \
-                     Supports partial matches.",
-                )),
+                description: Some(Cow::Borrowed("Search files by name (fast).")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -410,10 +403,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("search_by_kind"),
                 title: Some("Search by File Type".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Find all files of a specific type/kind. \
-                     Useful for finding all PDFs, images, source code, etc.",
-                )),
+                description: Some(Cow::Borrowed("Find files by kind/type.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -446,10 +436,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("search_recent"),
                 title: Some("Search Recently Modified Files".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Find files modified within a time period. \
-                     Useful for finding recent work.",
-                )),
+                description: Some(Cow::Borrowed("Find recently modified files.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -487,10 +474,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("get_metadata"),
                 title: Some("Get File Metadata".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Get Spotlight metadata for a specific file. \
-                     Returns information like content type, creation date, author, etc.",
-                )),
+                description: Some(Cow::Borrowed("Spotlight metadata by path.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -513,11 +497,7 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("raw_query"),
                 title: Some("Raw Spotlight Query".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Execute a raw Spotlight query using mdfind syntax. \
-                     For advanced users who know Spotlight query language. \
-                     Example: 'kMDItemContentType == \"public.plain-text\" && kMDItemTextContent == \"*TODO*\"cd'",
-                )),
+                description: Some(Cow::Borrowed("Run a raw mdfind query.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

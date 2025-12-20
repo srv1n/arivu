@@ -85,3 +85,28 @@ pub mod google_gmail;
 pub mod google_people;
 #[cfg(feature = "microsoft-graph")]
 pub mod microsoft;
+
+// Apple Ecosystem (macOS only) - Native app integrations via AppleScript
+// These connectors require macOS and use system apps without separate credentials
+#[cfg(all(
+    target_os = "macos",
+    any(
+        feature = "apple-mail",
+        feature = "apple-notes",
+        feature = "apple-messages",
+        feature = "apple-reminders",
+        feature = "apple-contacts"
+    )
+))]
+pub mod apple_common;
+
+#[cfg(all(target_os = "macos", feature = "apple-contacts"))]
+pub mod apple_contacts;
+#[cfg(all(target_os = "macos", feature = "apple-mail"))]
+pub mod apple_mail;
+#[cfg(all(target_os = "macos", feature = "apple-messages"))]
+pub mod apple_messages;
+#[cfg(all(target_os = "macos", feature = "apple-notes"))]
+pub mod apple_notes;
+#[cfg(all(target_os = "macos", feature = "apple-reminders"))]
+pub mod apple_reminders;

@@ -241,9 +241,7 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_recent_preprints"),
                 title: None,
-                description: Some(Cow::Borrowed(
-                    "Get most recent preprints from bioRxiv or medRxiv",
-                )),
+                description: Some(Cow::Borrowed("Recent preprints from bioRxiv/medRxiv.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -271,7 +269,7 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_preprints_by_date"),
                 title: None,
-                description: Some(Cow::Borrowed("Get preprints within a date range")),
+                description: Some(Cow::Borrowed("Preprints within a date range.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -303,7 +301,7 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_preprint_by_doi"),
                 title: None,
-                description: Some(Cow::Borrowed("Get details of a specific preprint by DOI")),
+                description: Some(Cow::Borrowed("Preprint details by DOI.")),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

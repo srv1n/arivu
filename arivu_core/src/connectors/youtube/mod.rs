@@ -773,8 +773,16 @@ impl Connector for YouTubeConnector {
             Tool {
                 name: Cow::Borrowed("get_video_details"),
                 title: None,
-                description: Some(Cow::Borrowed("Given a YouTube video id or URL, returns video details: title, author, description, and either chapters (preferred) or a raw transcript.")),
-                input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(GetVideoDetailsInput)).map_err(|e| ConnectorError::Other(e.to_string()))?.as_object().expect("Schema object").clone()),
+                description: Some(Cow::Borrowed(
+                    "Video details + transcript; accepts video ID or URL.",
+                )),
+                input_schema: Arc::new(
+                    serde_json::to_value(schemars::schema_for!(GetVideoDetailsInput))
+                        .map_err(|e| ConnectorError::Other(e.to_string()))?
+                        .as_object()
+                        .expect("Schema object")
+                        .clone(),
+                ),
                 output_schema: None,
                 annotations: None,
                 icons: None,
@@ -783,13 +791,19 @@ impl Connector for YouTubeConnector {
                 name: Cow::Borrowed("search_videos"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Search YouTube with filters and sorting. Supports search_type (video|playlist|channel|all), upload_date (e.g., today/this_week), and sort (views/duration/subscribers). Returns mixed results with rich fields."
+                    "Search videos/playlists/channels with filters.",
                 )),
-                input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(SearchVideosInput)).map_err(|e| ConnectorError::Other(e.to_string()))?.as_object().expect("Schema object").clone()),
+                input_schema: Arc::new(
+                    serde_json::to_value(schemars::schema_for!(SearchVideosInput))
+                        .map_err(|e| ConnectorError::Other(e.to_string()))?
+                        .as_object()
+                        .expect("Schema object")
+                        .clone(),
+                ),
                 output_schema: None,
                 annotations: None,
                 icons: None,
-            }
+            },
         ];
 
         Ok(ListToolsResult {

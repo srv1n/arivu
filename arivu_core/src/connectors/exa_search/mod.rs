@@ -72,6 +72,12 @@ impl ExaSearchConnector {
             body["category"] = json!(category);
         }
 
+        // Geographic location bias - use when searching for a different market
+        // e.g., user_location="US" to find US-based results while in India
+        if let Some(location) = args.get("user_location").and_then(|v| v.as_str()) {
+            body["userLocation"] = json!(location);
+        }
+
         // Date filters
         if let Some(start_crawl) = args.get("start_crawl_date").and_then(|v| v.as_str()) {
             body["startCrawlDate"] = json!(start_crawl);
@@ -126,12 +132,20 @@ impl ExaSearchConnector {
             }
         }
 
-        // Contents options
+        // Contents options - request highlights by default for useful snippets
         if let Some(contents) = args.get("contents") {
             body["contents"] = contents.clone();
         } else {
-            // Simple boolean flags for backward compatibility
-            let mut contents_obj = json!({});
+            // Build contents object with defaults for useful display
+            let mut contents_obj = json!({
+                // Request highlights by default (max 1 snippet, 200 chars each)
+                "highlights": {
+                    "numSentences": 2,
+                    "highlightsPerUrl": 1
+                }
+            });
+
+            // Override with explicit parameters if provided
             if let Some(text) = args.get("text").and_then(|v| v.as_bool()) {
                 contents_obj["text"] = json!(text);
             }
@@ -141,9 +155,8 @@ impl ExaSearchConnector {
             if let Some(summary) = args.get("summary") {
                 contents_obj["summary"] = summary.clone();
             }
-            if !contents_obj.as_object().unwrap().is_empty() {
-                body["contents"] = contents_obj;
-            }
+
+            body["contents"] = contents_obj;
         }
 
         let headers = self.get_headers()?;
@@ -222,6 +235,9 @@ impl ExaSearchConnector {
         }
         if let Some(subpages) = args.get("subpages").and_then(|v| v.as_u64()) {
             body["subpages"] = json!(subpages);
+        }
+        if let Some(subpage_target) = args.get("subpageTarget") {
+            body["subpageTarget"] = subpage_target.clone();
         }
 
         let headers = self.get_headers()?;
@@ -404,6 +420,126 @@ impl ExaSearchConnector {
 
         structured_result_with_text(&data, None)
     }
+
+    async fn research_impl(
+        &self,
+        args: &serde_json::Map<String, Value>,
+    ) -> Result<CallToolResult, ConnectorError> {
+        let instructions = args
+            .get("instructions")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConnectorError::InvalidParams("Missing 'instructions'".into()))?;
+
+        let mut body = json!({
+            "instructions": instructions,
+        });
+
+        // Model selection
+        if let Some(model) = args.get("model").and_then(|v| v.as_str()) {
+            body["model"] = json!(model);
+        }
+
+        // Output schema for structured results
+        if let Some(schema) = args.get("output_schema") {
+            body["outputSchema"] = schema.clone();
+        }
+
+        let headers = self.get_headers()?;
+
+        // Start the research task
+        let resp = self
+            .client
+            .post("https://api.exa.ai/research/v1")
+            .headers(headers.clone())
+            .json(&body)
+            .send()
+            .await
+            .map_err(ConnectorError::HttpRequest)?;
+
+        let status = resp.status();
+        let start_value: Value = resp.json().await.map_err(ConnectorError::HttpRequest)?;
+
+        if !status.is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Exa API error: {} - {}",
+                status, start_value
+            )));
+        }
+
+        let research_id = start_value
+            .get("researchId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ConnectorError::Other("No researchId in response".into()))?;
+
+        // Poll for results (max 60 seconds with 2-second intervals)
+        let max_attempts = 30;
+        for attempt in 0..max_attempts {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+            let poll_resp = self
+                .client
+                .get(format!("https://api.exa.ai/research/v1/{}", research_id))
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(ConnectorError::HttpRequest)?;
+
+            let poll_status = poll_resp.status();
+            let poll_value: Value = poll_resp
+                .json()
+                .await
+                .map_err(ConnectorError::HttpRequest)?;
+
+            if !poll_status.is_success() {
+                return Err(ConnectorError::Other(format!(
+                    "Exa research poll error: {} - {}",
+                    poll_status, poll_value
+                )));
+            }
+
+            let status = poll_value
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            match status {
+                "completed" => {
+                    let data = json!({
+                        "provider": "exa",
+                        "operation": "research",
+                        "research_id": research_id,
+                        "status": "completed",
+                        "output": poll_value.get("output").cloned(),
+                        "cost": poll_value.get("cost").cloned(),
+                        "events": poll_value.get("events").cloned()
+                    });
+                    return structured_result_with_text(&data, None);
+                }
+                "failed" => {
+                    return Err(ConnectorError::Other(format!(
+                        "Research task failed: {:?}",
+                        poll_value.get("error")
+                    )));
+                }
+                _ => {
+                    // Still running, continue polling
+                    if attempt == max_attempts - 1 {
+                        let data = json!({
+                            "provider": "exa",
+                            "operation": "research",
+                            "research_id": research_id,
+                            "status": status,
+                            "message": "Research still in progress. Use research_id to check status later.",
+                            "partial_events": poll_value.get("events").cloned()
+                        });
+                        return structured_result_with_text(&data, None);
+                    }
+                }
+            }
+        }
+
+        Err(ConnectorError::Other("Research polling timeout".into()))
+    }
 }
 
 #[async_trait]
@@ -436,7 +572,41 @@ impl Connector for ExaSearchConnector {
                 website_url: None,
             },
             instructions: Some(
-                "Exa tools: search (neural/fast/deep), get_contents (extract page content), find_similar (discover related pages), answer (get direct answers)".into(),
+r#"Exa is a neural search engine for discovering specific entity types (people, companies, papers, repos).
+
+EXA IS BEST FOR (use these examples as guidance):
+
+1. PEOPLE SEARCH (category="people"):
+   "Find VPs of Engineering at fintech startups" → search with category="people"
+   "ML engineers who worked at Google" → search with category="people"
+   "Directors of Sales in Chicago SaaS companies" → search with category="people"
+
+2. COMPANY DISCOVERY (category="company"):
+   "Series A climate tech companies" → search with category="company"
+   "YC startups working on AI agents" → search with category="company"
+   "Pre-seed robotics startups" → search with category="company"
+
+3. FIND SIMILAR (unique to Exa):
+   "Find companies similar to Stripe" → find_similar(url="stripe.com", category="company")
+   "Find blogs like Paul Graham's essays" → find_similar(url="paulgraham.com")
+   "Find papers related to this one" → find_similar(url="arxiv.org/abs/...")
+
+4. SPECIALIZED CATEGORIES:
+   "Latest transformer papers" → category="research paper"
+   "NVIDIA SEC filings" → category="financial report"
+   "LangChain GitHub repo" → category="github"
+   "Tweets about Cursor IDE" → category="tweet"
+
+5. QUICK ANSWERS (answer endpoint):
+   "What is Kubernetes?" → answer tool
+   "Who is the CEO of Anthropic?" → answer tool
+
+USE PARALLEL INSTEAD FOR:
+- "Compare AWS vs GCP vs Azure" → Parallel search_queries (multi-query)
+- "Alert me when OpenAI announces" → Parallel create_monitor
+- Agent loops over many items → Parallel mode="agentic"
+
+DECISION RULE: If you need a specific entity type (people, companies, papers, tweets, repos) or "find similar", use Exa. If you need monitoring, multi-query comparison, or token-efficient agent loops, use Parallel."#.into(),
             ),
         })
     }
@@ -466,29 +636,92 @@ impl Connector for ExaSearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Intelligent web search using embeddings-based neural search. Supports auto, fast, and deep search modes with advanced filtering."
+                "Semantic search with optional category filters (people/company/news/etc.).",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "num_results": {"type": "integer", "default": 10, "maximum": 100, "description": "Number of results to return"},
-                    "type": {"type": "string", "enum": ["neural", "auto", "fast", "deep"], "default": "auto", "description": "Search type: auto (intelligent), fast (<500ms), deep (comprehensive)"},
-                    "use_autoprompt": {"type": "boolean", "description": "Let Exa rewrite query for better results"},
-                    "category": {"type": "string", "enum": ["research paper", "news", "pdf", "github", "tweet", "company", "linkedin profile", "financial report"], "description": "Filter by content category"},
-                    "start_crawl_date": {"type": "string", "description": "ISO 8601 datetime - results crawled after this date"},
-                    "end_crawl_date": {"type": "string", "description": "ISO 8601 datetime - results crawled before this date"},
-                    "start_published_date": {"type": "string", "description": "ISO 8601 datetime - content published after this date"},
-                    "end_published_date": {"type": "string", "description": "ISO 8601 datetime - content published before this date"},
-                    "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Restrict to specific domains"},
-                    "exclude_domains": {"type": "array", "items": {"type": "string"}, "description": "Exclude specific domains"},
-                    "include_text": {"type": "array", "items": {"type": "string"}, "description": "Strings that must appear in results"},
-                    "exclude_text": {"type": "array", "items": {"type": "string"}, "description": "Strings to exclude"},
-                    "text": {"type": "boolean", "description": "Include page text content"},
-                    "highlights": {"type": "object", "description": "Get highlighted snippets with similarity scores"},
-                    "summary": {"type": "object", "description": "Get AI-generated summaries"},
-                    "contents": {"type": "object", "description": "Advanced contents configuration"},
-                    "response_format": {"type": "string", "enum": ["concise", "detailed"], "default": "concise"}
+                    "query": {
+                        "type": "string",
+                        "description": "Search query. For people/company search, be descriptive: 'CTO at AI startups in NYC' or 'seed-stage fintech companies'"
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "default": 10,
+                        "maximum": 100,
+                        "description": "Number of results (max 100)"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["neural", "auto", "fast", "deep"],
+                        "default": "auto",
+                        "description": "auto=smart hybrid, deep=comprehensive research, fast=<500ms, neural=pure semantic"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["people", "company", "research paper", "news", "pdf", "github", "tweet", "linkedin profile", "financial report", "personal site"],
+                        "description": "IMPORTANT: Use this to search specific content types. 'people' for professionals, 'company' for businesses, 'research paper' for academic work"
+                    },
+                    "user_location": {
+                        "type": "string",
+                        "description": "Two-letter country code (ISO 3166-1) to bias results toward a region. Essential for cross-border research. Example: 'US' to find US companies while searching from India, 'DE' for German market research, 'GB' for UK."
+                    },
+                    "use_autoprompt": {
+                        "type": "boolean",
+                        "description": "Let Exa optimize your query. Good for natural language questions."
+                    },
+                    "start_published_date": {
+                        "type": "string",
+                        "description": "ISO 8601 datetime for content published after this date. Example: '2024-01-01T00:00:00Z'"
+                    },
+                    "end_published_date": {
+                        "type": "string",
+                        "description": "ISO 8601 datetime for content published before this date"
+                    },
+                    "start_crawl_date": {
+                        "type": "string",
+                        "description": "Filter by when Exa discovered the page"
+                    },
+                    "end_crawl_date": {
+                        "type": "string",
+                        "description": "Filter by when Exa discovered the page"
+                    },
+                    "include_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Only search these domains. Example: ['linkedin.com', 'twitter.com']"
+                    },
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exclude these domains from results"
+                    },
+                    "include_text": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Results must contain these strings (max 1 string, 5 words)"
+                    },
+                    "exclude_text": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exclude results containing these strings"
+                    },
+                    "text": {
+                        "type": "boolean",
+                        "description": "Include full page text in results"
+                    },
+                    "highlights": {
+                        "type": "object",
+                        "description": "Get relevant snippets. Example: {\"numSentences\": 3, \"highlightsPerUrl\": 2}"
+                    },
+                    "summary": {
+                        "type": "object",
+                        "description": "Get AI summaries. Example: {\"query\": \"summarize the main findings\"}"
+                    },
+                    "contents": {
+                        "type": "object",
+                        "description": "Advanced: combine text, highlights, summary options"
+                    }
                 },
                 "required": ["query"]
             }).as_object().expect("Schema object").clone()),
@@ -500,18 +733,40 @@ impl Connector for ExaSearchConnector {
         let get_contents_tool = Tool {
             name: Cow::Borrowed("get_contents"),
             title: None,
-            description: Some(Cow::Borrowed(
-                "Retrieve clean, parsed content from URLs. Get text, highlights, summaries, and optionally crawl subpages."
-            )),
+            description: Some(Cow::Borrowed("Fetch full content for URLs/ids.")),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
-                    "ids": {"type": "array", "items": {"type": "string"}, "description": "Array of Exa result IDs or URLs"},
-                    "text": {"type": ["boolean", "object"], "description": "Return page text. Can be boolean or object with maxCharacters, includeHtmlTags"},
-                    "highlights": {"type": "object", "description": "Get highlighted snippets"},
-                    "summary": {"type": "object", "description": "Get AI summaries"},
-                    "livecrawl": {"type": "string", "enum": ["never", "fallback", "preferred", "always"], "description": "Livecrawl strategy"},
-                    "subpages": {"type": "integer", "description": "Number of subpages to crawl"}
+                    "ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "URLs or Exa result IDs to fetch content from"
+                    },
+                    "text": {
+                        "type": ["boolean", "object"],
+                        "description": "Get page text. Use object for options: {\"maxCharacters\": 5000, \"includeHtmlTags\": false}"
+                    },
+                    "highlights": {
+                        "type": "object",
+                        "description": "Extract relevant snippets. Example: {\"numSentences\": 3, \"query\": \"what is the pricing?\"}"
+                    },
+                    "summary": {
+                        "type": "object",
+                        "description": "AI summary. Can include schema for structured output: {\"query\": \"extract company info\", \"schema\": {...}}"
+                    },
+                    "livecrawl": {
+                        "type": "string",
+                        "enum": ["never", "fallback", "preferred", "always"],
+                        "description": "never=cache only, fallback=cache then crawl, preferred=crawl then cache, always=fresh crawl"
+                    },
+                    "subpages": {
+                        "type": "integer",
+                        "description": "Number of linked pages to also crawl (0-10)"
+                    },
+                    "subpageTarget": {
+                        "type": ["string", "array"],
+                        "description": "Keywords to find in subpages. Example: 'pricing' or ['docs', 'api']"
+                    }
                 },
                 "required": ["ids"]
             }).as_object().expect("Schema object").clone()),
@@ -523,21 +778,45 @@ impl Connector for ExaSearchConnector {
         let find_similar_tool = Tool {
             name: Cow::Borrowed("find_similar"),
             title: None,
-            description: Some(Cow::Borrowed(
-                "Find webpages semantically similar to a given URL. Great for discovery and research."
-            )),
+            description: Some(Cow::Borrowed("Find similar pages to a URL.")),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "URL to find similar pages for"},
-                    "num_results": {"type": "integer", "default": 10, "maximum": 100, "description": "Number of results"},
-                    "category": {"type": "string", "description": "Filter by category"},
-                    "start_crawl_date": {"type": "string", "description": "Results crawled after date"},
-                    "end_crawl_date": {"type": "string", "description": "Results crawled before date"},
-                    "include_domains": {"type": "array", "items": {"type": "string"}},
-                    "exclude_domains": {"type": "array", "items": {"type": "string"}},
-                    "exclude_source_domain": {"type": "boolean", "description": "Exclude the source domain from results"},
-                    "contents": {"type": "object", "description": "Request page contents"}
+                    "url": {
+                        "type": "string",
+                        "description": "URL to find similar pages for"
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "default": 10,
+                        "maximum": 100,
+                        "description": "Number of similar results to return"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["people", "company", "research paper", "news", "pdf", "github", "tweet", "linkedin profile", "financial report", "personal site"],
+                        "description": "Filter similar results to this category"
+                    },
+                    "exclude_source_domain": {
+                        "type": "boolean",
+                        "description": "Exclude results from the same domain as the input URL"
+                    },
+                    "start_crawl_date": {"type": "string", "description": "Results discovered after this date"},
+                    "end_crawl_date": {"type": "string", "description": "Results discovered before this date"},
+                    "include_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Only include results from these domains"
+                    },
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exclude results from these domains"
+                    },
+                    "contents": {
+                        "type": "object",
+                        "description": "Also fetch page contents (text, highlights, summary)"
+                    }
                 },
                 "required": ["url"]
             }).as_object().expect("Schema object").clone()),
@@ -549,19 +828,63 @@ impl Connector for ExaSearchConnector {
         let answer_tool = Tool {
             name: Cow::Borrowed("answer"),
             title: None,
-            description: Some(Cow::Borrowed(
-                "Get direct LLM-generated answers informed by Exa search results. Supports streaming and citations."
-            )),
+            description: Some(Cow::Borrowed("Grounded answer with citations.")),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Question to answer"},
-                    "mode": {"type": "string", "enum": ["precise", "detailed"], "description": "Answer mode: precise for facts, detailed for summaries"},
-                    "num_results": {"type": "integer", "description": "Number of search results to use"},
-                    "category": {"type": "string", "description": "Filter source category"},
-                    "include_citations": {"type": "boolean", "default": true, "description": "Include source citations"}
+                    "query": {
+                        "type": "string",
+                        "description": "Question to answer"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["precise", "detailed"],
+                        "description": "precise=short factual answers, detailed=comprehensive summaries"
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of search results to use for generating the answer"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["people", "company", "research paper", "news", "pdf", "github", "tweet", "linkedin profile", "financial report", "personal site"],
+                        "description": "Filter sources to this category"
+                    },
+                    "include_citations": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include source URLs and citations in response"
+                    }
                 },
                 "required": ["query"]
+            }).as_object().expect("Schema object").clone()),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+        };
+
+        let research_tool = Tool {
+            name: Cow::Borrowed("research"),
+            title: None,
+            description: Some(Cow::Borrowed("Deep research workflow with sources.")),
+            input_schema: Arc::new(json!({
+                "type": "object",
+                "properties": {
+                    "instructions": {
+                        "type": "string",
+                        "description": "Detailed research instructions (max 4096 chars). Be specific about what to find and how to structure output."
+                    },
+                    "model": {
+                        "type": "string",
+                        "enum": ["exa-research-fast", "exa-research", "exa-research-pro"],
+                        "description": "fast=quick research, default=balanced, pro=most thorough"
+                    },
+                    "output_schema": {
+                        "type": "object",
+                        "description": "JSON Schema for structured output. If provided, results validate against this schema."
+                    }
+                },
+                "required": ["instructions"]
             }).as_object().expect("Schema object").clone()),
             output_schema: None,
             annotations: None,
@@ -574,6 +897,7 @@ impl Connector for ExaSearchConnector {
                 get_contents_tool,
                 find_similar_tool,
                 answer_tool,
+                research_tool,
             ],
             next_cursor: None,
         })
@@ -590,6 +914,7 @@ impl Connector for ExaSearchConnector {
             "get_contents" => self.get_contents_impl(&args).await,
             "find_similar" => self.find_similar_impl(&args).await,
             "answer" => self.answer_impl(&args).await,
+            "research" => self.research_impl(&args).await,
             _ => Err(ConnectorError::ToolNotFound),
         }
     }

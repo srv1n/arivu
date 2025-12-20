@@ -58,11 +58,13 @@ The server exposes the following MCP capabilities:
 - `web` - Basic web scraping
 
 **Authentication Required:**
-- `reddit` - Reddit API (Client ID/Secret)
 - `x` - X (Twitter) API (Credentials or browser cookies)
 - `slack` - Slack API (Bot token)
 - `github` - GitHub API (Personal access token)
 - LLM search connectors (`openai-search`, `anthropic-search`, etc.) - API keys
+
+**Authentication Optional:**
+- `reddit` - Reddit API (Client ID/Secret recommended for higher rate limits)
 
 ### MCP Client Usage
 
@@ -138,16 +140,20 @@ The server exposes the following MCP capabilities:
 
 ### Tool Naming Convention
 
-Tools are prefixed with their connector name to avoid conflicts:
-- `hackernews/search` - Search Hacker News
+Tools are prefixed with their connector name to avoid conflicts. Examples (not exhaustive):
+- `hackernews/search_stories` - Search Hacker News via Algolia
 - `wikipedia/search` - Search Wikipedia
 - `wikipedia/get_article` - Get specific Wikipedia article
-- `reddit/search_posts` - Search Reddit posts
+- `reddit/search_reddit` - Search Reddit posts
 - `youtube/get_video_details` - Get YouTube video with transcript
+
+Use `tools/list` to discover the full, exact tool set for each connector.
 
 ## Example Client
 
 See `examples/mcp_client_example.rs` for a complete example of how to interact with the MCP server programmatically.
+
+For LLM-oriented minimal guidance, see `docs/llms.txt` (task → tool mapping + tiny examples).
 
 ```bash
 # Run the example client

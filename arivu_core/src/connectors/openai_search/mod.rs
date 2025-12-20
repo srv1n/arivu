@@ -142,7 +142,7 @@ impl Connector for OpenAIWebSearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Grounded web answer via OpenAI Responses + web_search. When you need current info, call with a clear natural-language question; do not append years or redundant keywords unless the user asked. Returns an answer and citations. Use response_format='concise' (default) for small outputs; use 'detailed' only when you also need the raw provider payload.",
+                "Grounded web search via OpenAI; use for current info.",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
@@ -258,6 +258,9 @@ impl Connector for OpenAIWebSearchConnector {
             "answer": answer,
             "citations": citations
         });
+        if let Some(usage) = value.get("usage") {
+            data["usage"] = usage.clone();
+        }
         if detailed {
             data["raw"] = value.clone();
         }
