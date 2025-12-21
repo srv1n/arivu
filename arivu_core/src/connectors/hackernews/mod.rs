@@ -766,36 +766,30 @@ impl HackerNewsConnector {
         self.fetch_typed::<HackerNewsItem>(&url).await
     }
 
+    // Helper: build a stub story item with just an ID
+    fn story_stub(id: i64) -> HackerNewsItem {
+        HackerNewsItem {
+            id: Some(id),
+            author: None,
+            created_at: None,
+            created_at_i: None,
+            r#type: Some(ItemType::Story),
+            text: None,
+            title: None,
+            url: None,
+            points: None,
+            parent_id: None,
+            story_id: None,
+            options: None,
+            children: None,
+        }
+    }
+
     // Helper: fetch top stories
     async fn get_top_stories_list(&self) -> Result<Vec<HackerNewsItem>, ConnectorError> {
-        let url = "https://hn.algolia.com/api/v1/search?tags=front_page";
-        let response = self.fetch_algolia_search(url).await?;
-        Ok(response
-            .hits
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|hit| {
-                if let Some(id) = hit.object_id.and_then(|id| id.parse().ok()) {
-                    Some(HackerNewsItem {
-                        id: Some(id),
-                        author: hit.author,
-                        created_at: hit.created_at,
-                        created_at_i: hit.created_at_i,
-                        r#type: Some(ItemType::Story),
-                        text: hit.story_text.or(hit.comment_text),
-                        title: hit.title,
-                        url: hit.url,
-                        points: hit.points,
-                        parent_id: hit.parent_id,
-                        story_id: hit.story_id,
-                        options: None,
-                        children: None,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect())
+        let url = "https://hacker-news.firebaseio.com/v0/topstories.json";
+        let ids: Vec<i64> = self.fetch_typed(url).await?;
+        Ok(ids.into_iter().map(Self::story_stub).collect())
     }
 
     // Helper: fetch new stories

@@ -349,9 +349,9 @@ arivu search hackernews "rust" --limit 20
 arivu get hackernews 12345678
 arivu get youtube dQw4w9WgXcQ
 
-# Call tools directly (JSON args - for advanced use)
-arivu call github search_repos --args '{"query":"language:rust stars:>1000"}'
-arivu call slack list_channels
+# Connector subcommands (recommended)
+arivu github search-repos --query "language:rust stars:>1000" --limit 10
+arivu slack channels --limit 100
 
 # Output formats
 arivu --output json arxiv search --query "llm" | jq '.results[0]'
@@ -413,8 +413,8 @@ Most connectors support a `response_format` parameter to control output verbosit
 # Concise output (default) - minimal fields, fewer tokens
 arivu hackernews top --limit 5
 
-# With JSON args for detailed output
-arivu call hackernews get_stories --args '{"story_type":"top","limit":5,"response_format":"detailed"}'
+# Some connectors support a `--response-format` flag (e.g., `concise` or `detailed`)
+arivu openai-search search --query "What is Rust?" --response-format detailed
 ```
 
 This is particularly useful when integrating with AI agents where token usage matters. The concise format reduces response size while preserving the most important information.

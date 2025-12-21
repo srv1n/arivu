@@ -66,7 +66,10 @@ Monitor WWDC announcements for updates.
 5. **Test availability:**
    ```bash
    cargo build --features apple-health
-   ./target/debug/arivu call apple-health check_availability
+   ./target/debug/arivu tools apple-health
+
+   # This connector does not yet have a dedicated CLI wrapper command.
+   # When testing via MCP, use `tools/call` with the tool name `check_availability`.
    ```
 
 ## Current Implementation

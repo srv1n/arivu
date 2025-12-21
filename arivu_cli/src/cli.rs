@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
   arivu tools                             Show all tools with auth requirements
   arivu tools youtube                     Show tools for a specific connector
   arivu search youtube \"rust tutorial\"    Search YouTube videos
-  arivu hackernews search_stories \"rust\"  Search Hacker News directly
+  arivu hackernews search --query \"rust\"  Search Hacker News directly
 
 \x1b[1;36mAuthentication:\x1b[0m
   arivu setup                             Interactive setup wizard
@@ -240,36 +240,6 @@ pub enum Commands {
         /// Show only the most recent run
         #[arg(long, conflicts_with = "run")]
         last: bool,
-    },
-
-    /// Call a tool directly from a connector
-    ///
-    /// You can use the simplified syntax: `arivu <connector> <tool> [args...]`
-    /// The CLI automatically maps positional arguments to the tool's parameters.
-    ///
-    /// Advanced tool execution with JSON args. Prefer connector subcommands instead.
-    #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
-  # Prefer connector subcommands (with proper flags):
-  arivu youtube search --query \"rust\" --limit 10
-  arivu hackernews top --limit 5
-  arivu github search-repos --query \"rust cli\"
-
-  # JSON args (for advanced/scripting use):
-  arivu call youtube search_videos --args '{\"query\": \"rust\", \"limit\": 10}'
-  arivu call github list_issues --args '{\"owner\": \"rust-lang\", \"repo\": \"rust\"}'
-
-\x1b[1;36mTip:\x1b[0m Use `arivu <connector> --help` to see available subcommands.")]
-    Call {
-        /// Connector name (e.g., slack, github, youtube)
-        connector: String,
-        /// Tool name (e.g., list_channels, search_code)
-        tool: String,
-        /// JSON arguments (e.g., '{"query": "rust"}')
-        #[arg(long, conflicts_with = "params")]
-        args: Option<String>,
-        /// Positional arguments for the tool (simplified syntax)
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        params: Vec<String>,
     },
 
     // ========================================================================

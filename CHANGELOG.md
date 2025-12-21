@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.10] - 2025-12-21
+
+### Changed
+- Hacker News `top` now uses the official Firebase `topstories` ordering for front-page parity.
+- Removed the confusing `arivu call` CLI subcommand; use connector subcommands (e.g., `arivu reddit top ...`) and `arivu tools <connector>`.
+- Fixed Reddit CLI wrappers to call the correct underlying tools; `reddit top` now supports `--time` (hour/day/week/month/year/all).
+
 ## [0.2.9] - 2025-12-21
 
 ### Changed
@@ -115,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/srv1n/arivu/releases/tag/v0.2.10
 [0.2.9]: https://github.com/srv1n/arivu/releases/tag/v0.2.9
 [0.2.8]: https://github.com/srv1n/arivu/releases/tag/v0.2.8
 [0.1.0]: https://github.com/srv1n/arivu/releases/tag/v0.1.0

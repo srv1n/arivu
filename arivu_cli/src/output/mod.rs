@@ -130,7 +130,7 @@ fn format_text_output(data: &OutputData) -> Result<()> {
             result,
             meta,
         } => {
-            println!("Call {}.{}", connector, tool);
+            println!("Tool {}.{}", connector, tool);
             println!("{}", serde_json::to_string_pretty(result)?);
             if let Some(meta) = meta {
                 println!("Meta:");
@@ -362,7 +362,7 @@ fn format_markdown_output(data: &OutputData) -> Result<()> {
             result,
             meta,
         } => {
-            println!("# Call Result\n");
+            println!("# Tool Result\n");
             println!("**Connector:** {}\n", connector);
             println!("**Tool:** {}\n", tool);
             println!("```json");

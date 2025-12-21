@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use chrono;
 use reqwest;
+use roux::util::{FeedOption, TimePeriod};
 use roux::{Reddit, Subreddit, User};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -225,6 +226,11 @@ impl Connector for RedditConnector {
                         "subreddit": {
                             "type": "string",
                             "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
+                        },
+                        "time": {
+                            "type": "string",
+                            "description": "Time filter: hour, day, week, month, year, all (default: day)",
+                            "default": "day"
                         },
                         "limit": {
                             "type": "integer",
@@ -449,9 +455,33 @@ impl Connector for RedditConnector {
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
 
                 let subreddit = Subreddit::new(subreddit_name);
-                let posts = subreddit.top(limit, None).await.map_err(|e| {
-                    ConnectorError::Other(format!("Failed to fetch top posts: {}", e))
-                })?;
+                let time = args
+                    .get("time")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("day")
+                    .to_lowercase();
+
+                let period = match time.as_str() {
+                    "hour" | "now" => TimePeriod::Now,
+                    "day" | "today" => TimePeriod::Today,
+                    "week" => TimePeriod::ThisWeek,
+                    "month" => TimePeriod::ThisMonth,
+                    "year" => TimePeriod::ThisYear,
+                    "all" | "alltime" => TimePeriod::AllTime,
+                    _ => {
+                        return Err(ConnectorError::InvalidParams(format!(
+                            "Invalid 'time' value: '{}'. Expected one of: hour, day, week, month, year, all.",
+                            time
+                        )));
+                    }
+                };
+
+                let posts = subreddit
+                    .top(limit, Some(FeedOption::new().period(period)))
+                    .await
+                    .map_err(|e| {
+                        ConnectorError::Other(format!("Failed to fetch top posts: {}", e))
+                    })?;
 
                 let results: Vec<_> = posts
                     .data

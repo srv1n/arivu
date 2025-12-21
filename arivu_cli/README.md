@@ -212,19 +212,18 @@ arivu hackernews --help
 arivu youtube search --help
 ```
 
-### `arivu call` - Advanced Tool Execution
+### Tool Discovery
 
-For advanced use cases or tools without dedicated subcommands, use JSON args:
+Use `arivu tools <connector>` to see what each connector exposes and then use the connector's
+subcommand wrappers (recommended):
 
 ```bash
-arivu call <CONNECTOR> <TOOL> --args <JSON>
+arivu tools reddit
+arivu reddit --help
 ```
 
-**Examples:**
-```bash
-arivu call youtube search_videos --args '{"query": "rust", "limit": 10}'
-arivu call github list_issues --args '{"owner": "rust-lang", "repo": "rust", "state": "open"}'
-```
+### `arivu config` - Manage Authentication
+
 Manage authentication credentials for connectors.
 
 **Usage:**

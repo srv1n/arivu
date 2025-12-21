@@ -265,26 +265,10 @@ fn format_pretty_connector_tools(connector_name: &str, tools: &[arivu_core::Tool
             format_tool_schema(&schema)?;
         }
 
-        // Show example usage for this specific tool
+        // Show how to proceed from here
         println!();
         println!("  {}", "Example:".bold());
-        let example_args = get_example_args(&tool.name, &tool.input_schema);
-        if let Some(args) = example_args {
-            println!(
-                "    {} {} {} --args '{}'",
-                "arivu call".cyan(),
-                connector_name.yellow(),
-                tool.name.as_ref(),
-                args
-            );
-        } else {
-            println!(
-                "    {} {} {}",
-                "arivu call".cyan(),
-                connector_name.yellow(),
-                tool.name.as_ref()
-            );
-        }
+        println!("    {}", format!("arivu {} --help", connector_name).cyan());
     }
 
     println!();
@@ -295,74 +279,9 @@ fn format_pretty_connector_tools(connector_name: &str, tools: &[arivu_core::Tool
         "  {}",
         format!("arivu search {} \"<query>\"", connector_name).cyan()
     );
-    println!(
-        "  {}",
-        format!("arivu call {} <tool> --args '<json>'", connector_name).cyan()
-    );
+    println!("  {}", format!("arivu {} --help", connector_name).cyan());
 
     Ok(())
-}
-
-/// Generate example args JSON for a tool based on its schema
-fn get_example_args(
-    _tool_name: &str,
-    schema: &std::sync::Arc<serde_json::Map<String, Value>>,
-) -> Option<String> {
-    let props = schema.get("properties")?.as_object()?;
-    let required: std::collections::HashSet<&str> = schema
-        .get("required")
-        .and_then(|r| r.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-
-    if props.is_empty() {
-        return None;
-    }
-
-    let mut example = serde_json::Map::new();
-
-    for (name, prop_schema) in props {
-        // Only include required params in example
-        if !required.contains(name.as_str()) {
-            continue;
-        }
-
-        let prop_type = prop_schema
-            .get("type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("string");
-
-        let example_value = match prop_type {
-            "string" => {
-                // Generate contextual examples
-                match name.as_str() {
-                    "query" | "search_query" => serde_json::Value::String("rust async".to_string()),
-                    "video_id" => serde_json::Value::String("dQw4w9WgXcQ".to_string()),
-                    "subreddit" => serde_json::Value::String("rust".to_string()),
-                    "username" | "user" => serde_json::Value::String("example_user".to_string()),
-                    "channel" | "channel_id" => serde_json::Value::String("C123456".to_string()),
-                    "repo" | "repository" => serde_json::Value::String("owner/repo".to_string()),
-                    "paper_id" => serde_json::Value::String("2301.07041".to_string()),
-                    _ => serde_json::Value::String(format!("<{}>", name)),
-                }
-            }
-            "integer" | "number" => match name.as_str() {
-                "limit" | "max_results" => serde_json::Value::Number(10.into()),
-                "page" => serde_json::Value::Number(1.into()),
-                _ => serde_json::Value::Number(1.into()),
-            },
-            "boolean" => serde_json::Value::Bool(true),
-            _ => serde_json::Value::String(format!("<{}>", name)),
-        };
-
-        example.insert(name.clone(), example_value);
-    }
-
-    if example.is_empty() {
-        None
-    } else {
-        Some(serde_json::to_string(&serde_json::Value::Object(example)).unwrap_or_default())
-    }
 }
 
 fn format_pretty_all_tools(

@@ -330,14 +330,13 @@ Since this accesses personal WhatsApp:
 ### Test Commands
 
 ```bash
-# Check status
-arivu call whatsapp_status
+# This connector is not implemented yet, so there is no CLI wrapper.
+# When implemented, test via MCP `tools/call` (or a future `arivu whatsapp ...` CLI wrapper).
 
-# Connect (will show QR if needed)
-arivu call whatsapp_connect
-
-# Send test message (user provides their own number)
-arivu call whatsapp_send_message --to "1234567890" --message "Test from Arivu"
+# Example MCP calls (JSON-RPC):
+# {"jsonrpc":"2.0","method":"tools/call","params":{"name":"whatsapp_status","arguments":{}},"id":1}
+# {"jsonrpc":"2.0","method":"tools/call","params":{"name":"whatsapp_connect","arguments":{}},"id":2}
+# {"jsonrpc":"2.0","method":"tools/call","params":{"name":"whatsapp_send_message","arguments":{"to":"1234567890","message":"Test from Arivu"}},"id":3}
 ```
 
 ## Implementation Checklist

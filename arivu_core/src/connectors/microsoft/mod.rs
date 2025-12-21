@@ -19,7 +19,6 @@ use crate::{
     auth_store::{AuthStore, FileAuthStore},
     oauth,
 };
-use base64::Engine as _;
 #[allow(unused_imports)]
 use graph_rs_sdk::http::traits::AsyncIterator;
 #[allow(unused_imports)]
@@ -304,6 +303,7 @@ impl Connector for GraphConnector {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("attachment.bin")
                                 .to_string();
+                            use base64::Engine as _;
                             let bytes = base64::engine::general_purpose::STANDARD
                                 .decode(data_b64)
                                 .or_else(|_| {

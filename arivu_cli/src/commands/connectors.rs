@@ -316,7 +316,7 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
         crate::cli::OutputFormat::Pretty => {
             println!(
                 "{} {}.{}",
-                "Call".bold().cyan(),
+                "Tool".bold().cyan(),
                 connector.yellow(),
                 tool.cyan()
             );
@@ -1279,19 +1279,19 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
                 args.insert("subreddit".to_string(), json!(sub));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("search", args)
+            ("search_reddit", args)
         }
         RedditTools::Hot { subreddit, limit } => {
             let mut args = Map::new();
             args.insert("subreddit".to_string(), json!(subreddit));
             args.insert("limit".to_string(), json!(limit));
-            ("get_hot", args)
+            ("get_subreddit_hot_posts", args)
         }
         RedditTools::New { subreddit, limit } => {
             let mut args = Map::new();
             args.insert("subreddit".to_string(), json!(subreddit));
             args.insert("limit".to_string(), json!(limit));
-            ("get_new", args)
+            ("get_subreddit_new_posts", args)
         }
         RedditTools::Top {
             subreddit,
@@ -1302,12 +1302,17 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
             args.insert("subreddit".to_string(), json!(subreddit));
             args.insert("time".to_string(), json!(time));
             args.insert("limit".to_string(), json!(limit));
-            ("get_top", args)
+            ("get_subreddit_top_posts", args)
         }
         RedditTools::Post { id } => {
             let mut args = Map::new();
-            args.insert("id".to_string(), json!(id));
-            ("get_post", args)
+            let post_url = if id.starts_with("http://") || id.starts_with("https://") {
+                id
+            } else {
+                format!("https://www.reddit.com/comments/{}", id)
+            };
+            args.insert("post_url".to_string(), json!(post_url));
+            ("get_post_details", args)
         }
     };
 
