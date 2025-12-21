@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.9] - 2025-12-21
+
+### Changed
+- Bumped toml dependency to 0.9.10 for wider downstream compatibility
+
 ## [0.2.8] - 2025-12-20
 
 ### Added
@@ -110,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/srv1n/arivu/releases/tag/v0.2.9
 [0.2.8]: https://github.com/srv1n/arivu/releases/tag/v0.2.8
 [0.1.0]: https://github.com/srv1n/arivu/releases/tag/v0.1.0

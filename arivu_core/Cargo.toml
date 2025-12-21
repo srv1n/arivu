@@ -1,6 +1,6 @@
 [package]
 name = "arivu_core"
-version = "0.2.7"
+version = "0.2.9"
 edition = "2021"
 description = "Core library for Arivu - unified data source connectors"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ async-trait = "0.1.89"
 serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9"
-toml = "0.8.21"
+toml = "0.9.10"
 tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "io-std", "process"] }
 thiserror = "1.0.69"
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "cookies", "rustls-tls"] }
