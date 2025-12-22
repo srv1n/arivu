@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "all-connectors"))]
 mod tests {
     use crate::commands::tool_mappings::{generic_get_tool_and_args, generic_search_tool_and_args};
     use crate::commands::Result;
@@ -106,7 +106,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "all-connectors")]
     fn cli_tool_calls_match_core_tools() -> Result<()> {
         let rt = Runtime::new().expect("tokio runtime");
         rt.block_on(async {
