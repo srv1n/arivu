@@ -1,7 +1,7 @@
 use arivu_core::auth::AuthDetails;
 use arivu_core::connectors::semantic_scholar::SemanticScholarConnector;
+use arivu_core::CallToolRequestParam;
 use arivu_core::Connector;
-use async_mcp::types::{CallToolRequest, ToolResponseContent};
 use serde_json::json;
 
 #[tokio::main]
@@ -15,27 +15,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Creating request");
     // Create a request to search for papers
-    let request = CallToolRequest {
-        name: "search_papers".to_string(),
+    let request = CallToolRequestParam {
+        name: "search".into(),
         arguments: Some(
             json!({
                 "query": query,
-                "page_size": page_size,
-                "page": 1,
-                "sort": "relevance"
+                "limit": page_size,
             })
             .as_object()
             .unwrap()
-            .clone()
-            .into_iter()
-            .collect(),
+            .clone(),
         ),
-        meta: None,
     };
 
     println!("Calling tool");
     // Call the search_papers tool
     let response = semantic_scholar_connector.call_tool(request).await?;
+    let structured = response.structured_content.unwrap_or_else(|| json!({}));
+    println!("{}", serde_json::to_string_pretty(&structured)?);
     // let papers: Vec<Paper> = serde_json::from_str(response.content.first().unwrap().text.as_str())?;
 
     // // Process and print the results

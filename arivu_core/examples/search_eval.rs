@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for sc in &scenarios {
                 let args = sc.get("args").unwrap().as_object().unwrap().clone();
                 // Run concise and detailed for latency/size comparison
-                let mut run_variant = |fmt: &str| -> Result<
+                let run_variant = |fmt: &str| -> Result<
                     (serde_json::Value, u128, usize),
                     Box<dyn std::error::Error>,
                 > {
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 let (concise_json, ms_concise, bytes_concise) = run_variant("concise")?;
-                let (detailed_json, ms_detailed, bytes_detailed) = run_variant("detailed")?;
+                let (_detailed_json, ms_detailed, bytes_detailed) = run_variant("detailed")?;
 
                 let concise_answer = concise_json
                     .get("answer")

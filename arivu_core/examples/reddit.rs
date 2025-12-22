@@ -1,9 +1,8 @@
 use arivu_core::auth::AuthDetails;
 use arivu_core::connectors::reddit::RedditConnector;
+use arivu_core::CallToolRequestParam;
 use arivu_core::Connector;
-use async_mcp::types::{CallToolRequest, ToolResponseContent};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::env;
 
 #[tokio::main]
@@ -14,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Default search parameters
     let mut query = "sampler tone map";
     let mut limit = 5;
-    let mut advanced_params: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut advanced_params: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     // Process command line arguments
     if args.len() > 1 {
@@ -62,52 +61,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reddit_connector = RedditConnector::new(auth_details).await?;
 
     // Step 1: Search Reddit for the query with advanced parameters
-    let mut search_args = json!({
-        "query": query,
-        "limit": limit
-    });
+    let mut search_args = json!({ "query": query, "limit": limit });
 
     // Add advanced parameters to the search request
     if let Some(obj) = search_args.as_object_mut() {
-        for (key, value) in advanced_params {
+        for (key, value) in advanced_params.clone() {
             obj.insert(key, value);
         }
     }
 
-    let search_request = CallToolRequest {
-        name: "search_reddit".to_string(),
-        arguments: Some(
-            search_args
-                .as_object()
-                .unwrap()
-                .clone()
-                .into_iter()
-                .collect(),
-        ),
-        meta: None,
-    };
-
     // Call the search_reddit tool
-    let search_response = reddit_connector.call_tool(search_request).await?;
+    let search_response = reddit_connector
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(search_args.as_object().unwrap().clone()),
+        })
+        .await?;
 
-    // Parse search results
     let mut search_results = Vec::new();
-    for content in search_response.content {
-        if let ToolResponseContent::Text { text } = content {
-            let results: Value = serde_json::from_str(&text)?;
-            if let Some(results_array) = results.as_array() {
-                println!("Found {} results", results_array.len());
+    let structured = search_response
+        .structured_content
+        .unwrap_or_else(|| json!({}));
+    let results_value = structured.get("data").cloned().unwrap_or(structured);
+    let results_array = results_value.as_array().cloned().unwrap_or_default();
 
-                // Store search results for later processing
-                for result in results_array {
-                    if let (Some(url), Some(title)) = (
-                        result.get("url").and_then(|v| v.as_str()),
-                        result.get("title").and_then(|v| v.as_str()),
-                    ) {
-                        search_results.push((url.to_string(), title.to_string()));
-                    }
-                }
-            }
+    println!("Found {} results", results_array.len());
+    for result in results_array {
+        if let (Some(url), Some(title)) = (
+            result.get("url").and_then(|v| v.as_str()),
+            result.get("title").and_then(|v| v.as_str()),
+        ) {
+            search_results.push((url.to_string(), title.to_string()));
         }
     }
 
@@ -120,38 +104,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             title
         );
 
-        // Create request to get post details
-        let post_request = CallToolRequest {
-            name: "get_post_details".to_string(),
-            arguments: Some(
-                json!({
-                    "post_url": url,
-                    "comment_limit": 10,
-                    "comment_sort": "best"
-                })
-                .as_object()
-                .unwrap()
-                .clone()
-                .into_iter()
-                .collect(),
-            ),
-            meta: None,
-        };
-
         // Call the get_post_details tool
-        match reddit_connector.call_tool(post_request).await {
+        match reddit_connector
+            .call_tool(CallToolRequestParam {
+                name: "get".into(),
+                arguments: Some(
+                    json!({
+                        "post_url": url,
+                        "comment_limit": 10,
+                        "comment_sort": "best"
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                ),
+            })
+            .await
+        {
             Ok(post_response) => {
-                for content in post_response.content {
-                    if let ToolResponseContent::Text { text } = content {
-                        let post_data: Value = serde_json::from_str(&text)?;
-
-                        // Print post details
-                        print_post_details(&post_data);
-
-                        // Print comments
-                        print_comments(&post_data);
-                    }
-                }
+                let post_data = post_response
+                    .structured_content
+                    .unwrap_or_else(|| json!({}));
+                print_post_details(&post_data);
+                print_comments(&post_data);
             }
             Err(e) => {
                 println!("Error fetching post details: {}", e);

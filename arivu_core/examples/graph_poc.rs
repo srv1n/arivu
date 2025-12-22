@@ -1,7 +1,7 @@
 use arivu_core::{auth::AuthDetails, build_registry_enabled_only};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Minimal smoke: build registry with feature enabled and list providers
     let registry = build_registry_enabled_only().await;
     let names: Vec<_> = registry

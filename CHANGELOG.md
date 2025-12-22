@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.12] - 2025-12-22
+
+### Changed
+- Fixed `arivu_core` examples to compile again after MCP type refactors (removed stale `async_mcp` usage and aligned examples with `rmcp` request/response types).
+- Cleaned up example-only warnings so `cargo test --workspace --all-features` stays green.
+
 ## [0.2.11] - 2025-12-22
 
 ### Added
@@ -133,7 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/srv1n/arivu/releases/tag/v0.2.12
 [0.2.11]: https://github.com/srv1n/arivu/releases/tag/v0.2.11
 [0.2.10]: https://github.com/srv1n/arivu/releases/tag/v0.2.10
 [0.2.9]: https://github.com/srv1n/arivu/releases/tag/v0.2.9

@@ -4,15 +4,12 @@ use arivu_core::{
     utils::{get_domain, strip_multiple_newlines},
 };
 use htmd::HtmlToMarkdown;
-use meta_fetcher::fetch_metadata;
-use regex::Regex;
 use reqwest::blocking::Client;
-use rookie::{brave, common::enums::CookieToString, firefox};
-use scraper::{Html, Selector};
+use rookie::{common::enums::CookieToString, firefox};
+use scraper::Html;
 use termimad::{crossterm::style::Color, MadSkin, StyledChar};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
     // Create a custom cookie store
     let client = Client::new();
 
@@ -21,10 +18,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let domain = get_domain(url).map_err(|e| ConnectorError::Other(e.to_string()))?;
     let cookies = firefox(Some(vec![domain.into()]))?;
 
-    let response = client.get(url)
-    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
-    .header("Cookie", cookies.to_string()) // <- try to comment
-    .send()?;
+    let response = client
+        .get(url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
+Chrome/117.0.0.0 Safari/537.36",
+        )
+        .header("Cookie", cookies.to_string())
+        .send()?;
 
     let content = response.text()?;
     let content = strip_multiple_newlines(&content);
