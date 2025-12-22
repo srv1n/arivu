@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "arivu")]
@@ -467,10 +467,11 @@ pub enum Commands {
     #[command(name = "youtube", alias = "yt")]
     #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
   arivu youtube search --query \"rust programming\" --limit 10
-  arivu youtube video --id dQw4w9WgXcQ")]
+  arivu youtube dQw4w9WgXcQ
+  arivu youtube get https://youtube.com/watch?v=dQw4w9WgXcQ")]
     Youtube {
-        #[command(subcommand)]
-        tool: YoutubeTools,
+        #[command(flatten)]
+        args: YoutubeArgs,
     },
 
     /// Hacker News stories, comments, and search
@@ -690,8 +691,8 @@ pub enum OpenaiSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of sources to cite
-        #[arg(long, default_value_t = 5)]
-        max_results: u32,
+        #[arg(long, default_value_t = 5, alias = "max-results")]
+        limit: u32,
         /// Model name (e.g., o4-mini, gpt-4.1)
         #[arg(long)]
         model: Option<String>,
@@ -711,8 +712,8 @@ pub enum AnthropicSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of sources to cite
-        #[arg(long, default_value_t = 5)]
-        max_results: u32,
+        #[arg(long, default_value_t = 5, alias = "max-results")]
+        limit: u32,
         /// Model name (e.g., claude-3-7-sonnet-latest)
         #[arg(long)]
         model: Option<String>,
@@ -732,8 +733,8 @@ pub enum GeminiSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of sources to cite
-        #[arg(long, default_value_t = 5)]
-        max_results: u32,
+        #[arg(long, default_value_t = 5, alias = "max-results")]
+        limit: u32,
         /// Model name (e.g., gemini-1.5-pro-latest)
         #[arg(long)]
         model: Option<String>,
@@ -753,8 +754,8 @@ pub enum PerplexitySearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of sources to cite
-        #[arg(long, default_value_t = 5)]
-        max_results: u32,
+        #[arg(long, default_value_t = 5, alias = "max-results")]
+        limit: u32,
         /// Model name (e.g., sonar-pro)
         #[arg(long)]
         model: Option<String>,
@@ -774,8 +775,8 @@ pub enum XaiSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of sources to cite
-        #[arg(long, default_value_t = 5)]
-        max_results: u32,
+        #[arg(long, default_value_t = 5, alias = "max-results")]
+        limit: u32,
         /// Model name (e.g., grok-4-fast)
         #[arg(long)]
         model: Option<String>,
@@ -795,8 +796,8 @@ pub enum ExaTools {
         #[arg(long, short)]
         query: String,
         /// Number of results
-        #[arg(long, default_value_t = 10)]
-        num_results: u32,
+        #[arg(long, default_value_t = 10, alias = "num-results")]
+        limit: u32,
         /// Search type: auto, fast, or deep
         #[arg(long, default_value = "auto")]
         type_: String,
@@ -820,8 +821,8 @@ pub enum ExaTools {
         #[arg(long, short)]
         url: String,
         /// Number of results
-        #[arg(long, default_value_t = 10)]
-        num_results: u32,
+        #[arg(long, default_value_t = 10, alias = "num-results")]
+        limit: u32,
     },
 
     /// Get LLM-generated answer with citations
@@ -846,8 +847,8 @@ pub enum TavilySearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        max_results: u32,
+        #[arg(long, default_value_t = 10, alias = "max-results")]
+        limit: u32,
         /// Search depth: basic or advanced
         #[arg(long, default_value = "basic")]
         depth: String,
@@ -867,8 +868,8 @@ pub enum SerperSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        max_results: u32,
+        #[arg(long, default_value_t = 10, alias = "max-results")]
+        limit: u32,
         /// Response format: concise or detailed
         #[arg(long, default_value = "concise")]
         response_format: String,
@@ -885,8 +886,8 @@ pub enum SerpapiSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        max_results: u32,
+        #[arg(long, default_value_t = 10, alias = "max-results")]
+        limit: u32,
         /// Search engine: google, bing, etc.
         #[arg(long, default_value = "google")]
         engine: String,
@@ -906,8 +907,8 @@ pub enum FirecrawlSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        max_results: u32,
+        #[arg(long, default_value_t = 10, alias = "max-results")]
+        limit: u32,
         /// Whether to scrape and parse content
         #[arg(long, default_value_t = true)]
         scrape: bool,
@@ -927,8 +928,8 @@ pub enum ParallelSearchTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        max_results: u32,
+        #[arg(long, default_value_t = 10, alias = "max-results")]
+        limit: u32,
     },
 }
 
@@ -1472,6 +1473,9 @@ pub enum LocalfsTools {
         /// Output format: plain or markdown
         #[arg(long, short, default_value = "plain")]
         format: String,
+        /// Max characters to return (truncate)
+        #[arg(long)]
+        max_chars: Option<u32>,
     },
 
     /// Get document structure (table of contents, headings, chapters)
@@ -1491,6 +1495,9 @@ pub enum LocalfsTools {
         /// Section identifier (e.g., "page:5", "chapter:3", "heading:2", "lines:10-50")
         #[arg(long, short)]
         section: String,
+        /// Max characters to return (truncate)
+        #[arg(long)]
+        max_chars: Option<u32>,
     },
 
     /// Search within a file
@@ -1522,32 +1529,115 @@ pub enum YoutubeTools {
         limit: u32,
     },
 
-    /// Get video details
-    #[command(name = "video", alias = "get")]
-    Video {
-        /// Video ID or URL
-        #[arg(long, short)]
-        id: String,
+    /// List recent uploads from a channel or playlist
+    #[command(name = "list", alias = "recent")]
+    List {
+        /// Channel ID/URL/handle (e.g., UC..., https://youtube.com/@hubermanlab, @hubermanlab)
+        #[arg(
+            long,
+            conflicts_with = "playlist",
+            required_unless_present = "playlist"
+        )]
+        channel: Option<String>,
+        /// Playlist ID/URL (e.g., PL..., https://youtube.com/playlist?list=PL...)
+        #[arg(long, conflicts_with = "channel", required_unless_present = "channel")]
+        playlist: Option<String>,
+        /// Maximum number of videos to return
+        #[arg(long, short, default_value_t = 5)]
+        limit: u32,
+        /// Only include videos from the last N days (UTC)
+        #[arg(long)]
+        within_days: Option<u32>,
+        /// Only include videos published at/after this RFC3339 timestamp
+        #[arg(long)]
+        published_after: Option<String>,
     },
 
-    /// Get video transcript
-    #[command(name = "transcript", alias = "captions")]
+    /// Resolve a channel name/handle to a stable UC... channel ID (and ranked candidates for "official" selection)
+    #[command(name = "resolve-channel", alias = "resolve", alias = "channel")]
+    ResolveChannel {
+        /// Channel name query (e.g., "Andrew Huberman")
+        #[arg(long)]
+        query: Option<String>,
+        /// Channel ID/URL/handle to normalize (e.g., "@hubermanlab")
+        #[arg(long)]
+        channel: Option<String>,
+        /// Max candidates to return
+        #[arg(long, default_value_t = 5)]
+        limit: u32,
+        /// Prefer verified channels when ranking candidates
+        #[arg(long, default_value_t = true)]
+        prefer_verified: bool,
+    },
+
+    /// Get video details (title, description, transcript, chapters)
+    #[command(
+        name = "get",
+        alias = "video",
+        alias = "details",
+        alias = "get_details",
+        alias = "get-details",
+        alias = "getdetails"
+    )]
+    Get {
+        /// Video ID or URL (positional)
+        #[arg(
+            value_name = "ID_OR_URL",
+            required_unless_present = "id",
+            conflicts_with = "id"
+        )]
+        id_or_url: Option<String>,
+        /// Video ID or URL (flag)
+        #[arg(long, short, required_unless_present = "id_or_url")]
+        id: Option<String>,
+    },
+
+    /// Get video transcript (compat alias; use `arivu youtube get`)
+    #[command(name = "transcript", alias = "captions", hide = true)]
     Transcript {
-        /// Video ID or URL
-        #[arg(long, short)]
-        id: String,
-        /// Language code (e.g., "en", "es")
-        #[arg(long, short)]
-        lang: Option<String>,
+        /// Video ID or URL (positional)
+        #[arg(
+            value_name = "ID_OR_URL",
+            required_unless_present = "id",
+            conflicts_with = "id"
+        )]
+        id_or_url: Option<String>,
+        /// Video ID or URL (flag)
+        #[arg(long, short, required_unless_present = "id_or_url")]
+        id: Option<String>,
     },
 
-    /// Get video chapters
-    #[command(name = "chapters")]
+    /// Get video chapters (compat alias; use `arivu youtube get`)
+    #[command(name = "chapters", hide = true)]
     Chapters {
-        /// Video ID or URL
-        #[arg(long, short)]
-        id: String,
+        /// Video ID or URL (positional)
+        #[arg(
+            value_name = "ID_OR_URL",
+            required_unless_present = "id",
+            conflicts_with = "id"
+        )]
+        id_or_url: Option<String>,
+        /// Video ID or URL (flag)
+        #[arg(long, short, required_unless_present = "id_or_url")]
+        id: Option<String>,
     },
+}
+
+/// YouTube command args
+///
+/// Supports both:
+/// - `arivu youtube <ID_OR_URL>` (implicit get)
+/// - `arivu youtube <subcommand> ...`
+#[derive(Args, Clone)]
+#[command(args_conflicts_with_subcommands = true, arg_required_else_help = true)]
+pub struct YoutubeArgs {
+    /// YouTube subcommand
+    #[command(subcommand)]
+    pub command: Option<YoutubeTools>,
+
+    /// Video ID or URL (implicit `get`)
+    #[arg(value_name = "ID_OR_URL")]
+    pub id_or_url: Option<String>,
 }
 
 /// Hacker News tools
@@ -1719,6 +1809,12 @@ pub enum RedditTools {
         /// Subreddit to search in
         #[arg(long, short)]
         subreddit: Option<String>,
+        /// Sort order: relevance, hot, new, top, comments
+        #[arg(long, default_value = "relevance")]
+        sort: String,
+        /// Time filter: hour, day, week, month, year, all
+        #[arg(long, default_value = "all")]
+        time: String,
         /// Maximum number of results
         #[arg(long, short, default_value_t = 25)]
         limit: u32,

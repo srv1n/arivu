@@ -278,21 +278,58 @@ use crate::cli::{
     LocalfsTools, MacosTools, MicrosoftGraphTools, OpenaiSearchTools, ParallelSearchTools,
     PerplexitySearchTools, PubmedTools, RedditTools, RssTools, ScihubTools, SemanticScholarTools,
     SerpapiSearchTools, SerperSearchTools, SlackTools, SpotlightTools, TavilySearchTools, WebTools,
-    WikipediaTools, XTools, XaiSearchTools, YoutubeTools,
+    WikipediaTools, XTools, XaiSearchTools, YoutubeArgs, YoutubeTools,
 };
 use crate::commands::copy_to_clipboard;
 use crate::commands::usage_helpers::print_cost_summary;
 use arivu_core::CallToolRequestParam;
 use serde_json::Map;
 
-/// Helper to call a connector tool with JSON args
-async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Value>) -> Result<()> {
+async fn call_tool_raw(
+    connector: &str,
+    tool: &str,
+    args: Map<String, Value>,
+) -> Result<(Value, Option<Value>)> {
     let registry = crate::commands::list::create_registry().await?;
     let provider = registry
         .get_provider(connector)
         .ok_or_else(|| crate::commands::CommandError::ConnectorNotFound(connector.to_string()))?;
 
     let c = provider.lock().await;
+
+    // Validate tool exists and required arguments are present.
+    // This prevents the CLI wrappers from silently drifting away from core tool names/schemas.
+    let tools_response = c
+        .list_tools(Some(PaginatedRequestParam { cursor: None }))
+        .await?;
+    let tool_def = tools_response
+        .tools
+        .iter()
+        .find(|t| t.name.as_ref() == tool)
+        .ok_or_else(|| {
+            crate::commands::CommandError::ToolNotFound(tool.to_string(), connector.to_string())
+        })?;
+
+    if let Some(required) = tool_def
+        .input_schema
+        .get("required")
+        .and_then(|v| v.as_array())
+    {
+        let missing: Vec<String> = required
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|k| !args.contains_key(*k))
+            .map(ToString::to_string)
+            .collect();
+        if !missing.is_empty() {
+            return Err(crate::commands::CommandError::InvalidInput(format!(
+                "Missing required args for {}.{}: {}",
+                connector,
+                tool,
+                missing.join(", ")
+            )));
+        }
+    }
 
     let request = CallToolRequestParam {
         name: tool.to_string().into(),
@@ -312,6 +349,16 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
         serde_json::to_value(&result).unwrap_or_else(|_| json!({"ok": true}))
     };
 
+    Ok((payload, meta_value))
+}
+
+fn output_tool_result(
+    cli: &Cli,
+    connector: &str,
+    tool: &str,
+    payload: &Value,
+    meta_value: Option<&Value>,
+) -> Result<()> {
     match cli.output {
         crate::cli::OutputFormat::Pretty => {
             println!(
@@ -321,27 +368,33 @@ async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Val
                 tool.cyan()
             );
             println!();
-            println!("{}", crate::output::format_pretty(&payload));
+            println!("{}", crate::output::format_pretty(payload));
         }
         _ => {
             let data = OutputData::CallResult {
                 connector: connector.to_string(),
                 tool: tool.to_string(),
                 result: payload.clone(),
-                meta: meta_value.clone(),
+                meta: meta_value.cloned(),
             };
             format_output(&data, &cli.output)?;
         }
     }
 
     if cli.copy {
-        let text = serde_json::to_string_pretty(&payload)?;
+        let text = serde_json::to_string_pretty(payload)?;
         copy_to_clipboard(&text)?;
     }
 
-    print_cost_summary(&cli.output, meta_value.as_ref());
+    print_cost_summary(&cli.output, meta_value);
 
     Ok(())
+}
+
+/// Helper to call a connector tool with JSON args
+async fn call_tool(cli: &Cli, connector: &str, tool: &str, args: Map<String, Value>) -> Result<()> {
+    let (payload, meta_value) = call_tool_raw(connector, tool, args).await?;
+    output_tool_result(cli, connector, tool, &payload, meta_value.as_ref())
 }
 
 /// Handle OpenAI Search commands
@@ -349,13 +402,13 @@ pub async fn handle_openai_search(cli: &Cli, tool: OpenaiSearchTools) -> Result<
     let (tool_name, args) = match tool {
         OpenaiSearchTools::Search {
             query,
-            max_results,
+            limit,
             model,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             if let Some(m) = model {
                 args.insert("model".to_string(), json!(m));
             }
@@ -372,13 +425,13 @@ pub async fn handle_anthropic_search(cli: &Cli, tool: AnthropicSearchTools) -> R
     let (tool_name, args) = match tool {
         AnthropicSearchTools::Search {
             query,
-            max_results,
+            limit,
             model,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             if let Some(m) = model {
                 args.insert("model".to_string(), json!(m));
             }
@@ -395,13 +448,13 @@ pub async fn handle_gemini_search(cli: &Cli, tool: GeminiSearchTools) -> Result<
     let (tool_name, args) = match tool {
         GeminiSearchTools::Search {
             query,
-            max_results,
+            limit,
             model,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             if let Some(m) = model {
                 args.insert("model".to_string(), json!(m));
             }
@@ -418,13 +471,13 @@ pub async fn handle_perplexity_search(cli: &Cli, tool: PerplexitySearchTools) ->
     let (tool_name, args) = match tool {
         PerplexitySearchTools::Search {
             query,
-            max_results,
+            limit,
             model,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             if let Some(m) = model {
                 args.insert("model".to_string(), json!(m));
             }
@@ -441,13 +494,13 @@ pub async fn handle_xai_search(cli: &Cli, tool: XaiSearchTools) -> Result<()> {
     let (tool_name, args) = match tool {
         XaiSearchTools::Search {
             query,
-            max_results,
+            limit,
             model,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             if let Some(m) = model {
                 args.insert("model".to_string(), json!(m));
             }
@@ -464,13 +517,13 @@ pub async fn handle_exa(cli: &Cli, tool: ExaTools) -> Result<()> {
     let (tool_name, args) = match tool {
         ExaTools::Search {
             query,
-            num_results,
+            limit,
             type_,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("num_results".to_string(), json!(num_results));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("type".to_string(), json!(type_));
             args.insert("response_format".to_string(), json!(response_format));
             ("search", args)
@@ -481,10 +534,10 @@ pub async fn handle_exa(cli: &Cli, tool: ExaTools) -> Result<()> {
             args.insert("ids".to_string(), json!(ids_array));
             ("get_contents", args)
         }
-        ExaTools::FindSimilar { url, num_results } => {
+        ExaTools::FindSimilar { url, limit } => {
             let mut args = Map::new();
             args.insert("url".to_string(), json!(url));
-            args.insert("num_results".to_string(), json!(num_results));
+            args.insert("limit".to_string(), json!(limit));
             ("find_similar", args)
         }
         ExaTools::Answer { query, mode } => {
@@ -505,13 +558,13 @@ pub async fn handle_tavily_search(cli: &Cli, tool: TavilySearchTools) -> Result<
     let (tool_name, args) = match tool {
         TavilySearchTools::Search {
             query,
-            max_results,
+            limit,
             depth,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("depth".to_string(), json!(depth));
             args.insert("response_format".to_string(), json!(response_format));
             ("search", args)
@@ -526,12 +579,12 @@ pub async fn handle_serper_search(cli: &Cli, tool: SerperSearchTools) -> Result<
     let (tool_name, args) = match tool {
         SerperSearchTools::Search {
             query,
-            max_results,
+            limit,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("response_format".to_string(), json!(response_format));
             ("search", args)
         }
@@ -545,13 +598,13 @@ pub async fn handle_serpapi_search(cli: &Cli, tool: SerpapiSearchTools) -> Resul
     let (tool_name, args) = match tool {
         SerpapiSearchTools::Search {
             query,
-            max_results,
+            limit,
             engine,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("engine".to_string(), json!(engine));
             args.insert("response_format".to_string(), json!(response_format));
             ("search", args)
@@ -566,13 +619,13 @@ pub async fn handle_firecrawl_search(cli: &Cli, tool: FirecrawlSearchTools) -> R
     let (tool_name, args) = match tool {
         FirecrawlSearchTools::Search {
             query,
-            max_results,
+            limit,
             scrape,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("scrape".to_string(), json!(scrape));
             args.insert("response_format".to_string(), json!(response_format));
             ("search", args)
@@ -585,10 +638,10 @@ pub async fn handle_firecrawl_search(cli: &Cli, tool: FirecrawlSearchTools) -> R
 /// Handle Parallel Search commands
 pub async fn handle_parallel_search(cli: &Cli, tool: ParallelSearchTools) -> Result<()> {
     let (tool_name, args) = match tool {
-        ParallelSearchTools::Search { query, max_results } => {
+        ParallelSearchTools::Search { query, limit } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(max_results));
+            args.insert("limit".to_string(), json!(limit));
             ("search", args)
         }
     };
@@ -1090,21 +1143,35 @@ pub async fn handle_localfs(cli: &Cli, tool: LocalfsTools) -> Result<()> {
             args.insert("path".to_string(), json!(path));
             ("get_file_info", args)
         }
-        LocalfsTools::ExtractText { path, format } => {
-            let mut args = Map::new();
-            args.insert("path".to_string(), json!(path));
-            args.insert("format".to_string(), json!(format));
-            ("extract_text", args)
-        }
         LocalfsTools::Structure { path } => {
             let mut args = Map::new();
             args.insert("path".to_string(), json!(path));
             ("get_structure", args)
         }
-        LocalfsTools::Section { path, section } => {
+        LocalfsTools::ExtractText {
+            path,
+            format,
+            max_chars,
+        } => {
+            let mut args = Map::new();
+            args.insert("path".to_string(), json!(path));
+            args.insert("format".to_string(), json!(format));
+            if let Some(m) = max_chars {
+                args.insert("max_chars".to_string(), json!(m));
+            }
+            ("extract_text", args)
+        }
+        LocalfsTools::Section {
+            path,
+            section,
+            max_chars,
+        } => {
             let mut args = Map::new();
             args.insert("path".to_string(), json!(path));
             args.insert("section".to_string(), json!(section));
+            if let Some(m) = max_chars {
+                args.insert("max_chars".to_string(), json!(m));
+            }
             ("get_section", args)
         }
         LocalfsTools::Search {
@@ -1124,35 +1191,128 @@ pub async fn handle_localfs(cli: &Cli, tool: LocalfsTools) -> Result<()> {
 }
 
 /// Handle youtube commands
-pub async fn handle_youtube(cli: &Cli, tool: YoutubeTools) -> Result<()> {
-    let (tool_name, args) = match tool {
-        YoutubeTools::Search { query, limit } => {
-            let mut args = Map::new();
-            args.insert("query".to_string(), json!(query));
-            args.insert("limit".to_string(), json!(limit));
-            ("search_videos", args)
-        }
-        YoutubeTools::Video { id } => {
-            let mut args = Map::new();
-            args.insert("video_id".to_string(), json!(id));
-            ("get_video", args)
-        }
-        YoutubeTools::Transcript { id, lang } => {
-            let mut args = Map::new();
-            args.insert("video_id".to_string(), json!(id));
-            if let Some(l) = lang {
-                args.insert("language".to_string(), json!(l));
-            }
-            ("get_transcript", args)
-        }
-        YoutubeTools::Chapters { id } => {
-            let mut args = Map::new();
-            args.insert("video_id".to_string(), json!(id));
-            ("get_chapters", args)
-        }
+pub async fn handle_youtube(cli: &Cli, args: YoutubeArgs) -> Result<()> {
+    let tool = match args.command {
+        Some(t) => t,
+        None => YoutubeTools::Get {
+            id_or_url: args.id_or_url,
+            id: None,
+        },
     };
 
-    call_tool(cli, "youtube", tool_name, args).await
+    match tool {
+        YoutubeTools::Search { query, limit } => {
+            let mut tool_args = Map::new();
+            tool_args.insert("query".to_string(), json!(query));
+            tool_args.insert("limit".to_string(), json!(limit));
+            call_tool(cli, "youtube", "search", tool_args).await
+        }
+        YoutubeTools::List {
+            channel,
+            playlist,
+            limit,
+            within_days,
+            published_after,
+        } => {
+            let mut tool_args = Map::new();
+            tool_args.insert(
+                "source".to_string(),
+                json!(if channel.is_some() {
+                    "channel"
+                } else {
+                    "playlist"
+                }),
+            );
+            if let Some(ch) = channel {
+                tool_args.insert("channel".to_string(), json!(ch));
+            }
+            if let Some(pl) = playlist {
+                tool_args.insert("playlist".to_string(), json!(pl));
+            }
+            tool_args.insert("limit".to_string(), json!(limit));
+            if let Some(d) = within_days {
+                tool_args.insert("published_within_days".to_string(), json!(d));
+            }
+            if let Some(pa) = published_after {
+                tool_args.insert("published_after".to_string(), json!(pa));
+            }
+            call_tool(cli, "youtube", "list", tool_args).await
+        }
+        YoutubeTools::ResolveChannel {
+            query,
+            channel,
+            limit,
+            prefer_verified,
+        } => {
+            let mut tool_args = Map::new();
+            if let Some(q) = query {
+                tool_args.insert("query".to_string(), json!(q));
+            }
+            if let Some(ch) = channel {
+                tool_args.insert("channel".to_string(), json!(ch));
+            }
+            tool_args.insert("limit".to_string(), json!(limit));
+            tool_args.insert("prefer_verified".to_string(), json!(prefer_verified));
+            call_tool(cli, "youtube", "resolve_channel", tool_args).await
+        }
+        YoutubeTools::Get { id_or_url, id } => {
+            let id = id_or_url.or(id).ok_or_else(|| {
+                crate::commands::CommandError::InvalidInput(
+                    "Missing video ID/URL. Provide `arivu youtube <ID_OR_URL>` or `arivu youtube get --id <ID_OR_URL>`.".to_string(),
+                )
+            })?;
+
+            let mut tool_args = Map::new();
+            tool_args.insert("video_id".to_string(), json!(id));
+            tool_args.insert("response_format".to_string(), json!("detailed"));
+            call_tool(cli, "youtube", "get", tool_args).await
+        }
+        YoutubeTools::Transcript { id_or_url, id } => {
+            let id = id_or_url.or(id).ok_or_else(|| {
+                crate::commands::CommandError::InvalidInput(
+                    "Missing video ID/URL. Use `arivu youtube get`.".to_string(),
+                )
+            })?;
+
+            let mut tool_args = Map::new();
+            tool_args.insert("video_id".to_string(), json!(id));
+            tool_args.insert("response_format".to_string(), json!("concise"));
+
+            let (payload, meta_value) = call_tool_raw("youtube", "get", tool_args).await?;
+            let transcript_only = payload.get("transcript").cloned().unwrap_or(Value::Null);
+            output_tool_result(
+                cli,
+                "youtube",
+                "transcript",
+                &transcript_only,
+                meta_value.as_ref(),
+            )
+        }
+        YoutubeTools::Chapters { id_or_url, id } => {
+            let id = id_or_url.or(id).ok_or_else(|| {
+                crate::commands::CommandError::InvalidInput(
+                    "Missing video ID/URL. Use `arivu youtube get`.".to_string(),
+                )
+            })?;
+
+            let mut tool_args = Map::new();
+            tool_args.insert("video_id".to_string(), json!(id));
+            tool_args.insert("response_format".to_string(), json!("concise"));
+
+            let (payload, meta_value) = call_tool_raw("youtube", "get", tool_args).await?;
+            let chapters_only = payload
+                .get("chapters")
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new()));
+            output_tool_result(
+                cli,
+                "youtube",
+                "chapters",
+                &chapters_only,
+                meta_value.as_ref(),
+            )
+        }
+    }
 }
 
 /// Handle hackernews commands
@@ -1204,19 +1364,24 @@ pub async fn handle_arxiv(cli: &Cli, tool: ArxivTools) -> Result<()> {
         ArxivTools::Search { query, limit, sort } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(limit));
+            args.insert("limit".to_string(), json!(limit));
             args.insert("sort_by".to_string(), json!(sort));
-            ("search_papers", args)
+            ("search", args)
         }
         ArxivTools::Paper { id } => {
             let mut args = Map::new();
-            args.insert("id".to_string(), json!(id));
-            ("get_paper_details", args)
+            args.insert("paper_id".to_string(), json!(id));
+            args.insert("response_format".to_string(), json!("detailed"));
+            ("get", args)
         }
         ArxivTools::Pdf { id } => {
-            let mut args = Map::new();
-            args.insert("id".to_string(), json!(id));
-            ("get_pdf_url", args)
+            let mut tool_args = Map::new();
+            tool_args.insert("paper_id".to_string(), json!(id));
+            tool_args.insert("response_format".to_string(), json!("concise"));
+
+            let (payload, meta_value) = call_tool_raw("arxiv", "get", tool_args).await?;
+            let pdf_url_only = payload.get("pdf_url").cloned().unwrap_or(Value::Null);
+            return output_tool_result(cli, "arxiv", "pdf", &pdf_url_only, meta_value.as_ref());
         }
     };
 
@@ -1225,39 +1390,60 @@ pub async fn handle_arxiv(cli: &Cli, tool: ArxivTools) -> Result<()> {
 
 /// Handle github commands
 pub async fn handle_github(cli: &Cli, tool: GithubTools) -> Result<()> {
+    fn split_owner_repo(repo: &str) -> Result<(String, String)> {
+        let (owner, name) = repo.split_once('/').ok_or_else(|| {
+            crate::commands::CommandError::InvalidInput(
+                "Invalid repo. Expected 'owner/repo' (e.g., rust-lang/rust).".to_string(),
+            )
+        })?;
+        Ok((owner.to_string(), name.to_string()))
+    }
+
     let (tool_name, args) = match tool {
         GithubTools::SearchRepos { query, limit } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
             args.insert("per_page".to_string(), json!(limit));
+            args.insert("page".to_string(), json!(1));
             ("search_repositories", args)
         }
         GithubTools::SearchCode { query, repo, limit } => {
             let mut args = Map::new();
+            let query = if let Some(r) = repo {
+                format!("{} repo:{}", query, r)
+            } else {
+                query
+            };
             args.insert("query".to_string(), json!(query));
-            if let Some(r) = repo {
-                args.insert("repo".to_string(), json!(r));
-            }
             args.insert("per_page".to_string(), json!(limit));
-            ("search_code", args)
+            args.insert("page".to_string(), json!(1));
+            ("code_search", args)
         }
         GithubTools::Issues { repo, state, limit } => {
+            let (owner, name) = split_owner_repo(&repo)?;
             let mut args = Map::new();
-            args.insert("repo".to_string(), json!(repo));
+            args.insert("owner".to_string(), json!(owner));
+            args.insert("repo".to_string(), json!(name));
             args.insert("state".to_string(), json!(state));
             args.insert("per_page".to_string(), json!(limit));
+            args.insert("page".to_string(), json!(1));
             ("list_issues", args)
         }
         GithubTools::Pulls { repo, state, limit } => {
+            let (owner, name) = split_owner_repo(&repo)?;
             let mut args = Map::new();
-            args.insert("repo".to_string(), json!(repo));
+            args.insert("owner".to_string(), json!(owner));
+            args.insert("repo".to_string(), json!(name));
             args.insert("state".to_string(), json!(state));
             args.insert("per_page".to_string(), json!(limit));
+            args.insert("page".to_string(), json!(1));
             ("list_pull_requests", args)
         }
         GithubTools::Repo { repo } => {
+            let (owner, name) = split_owner_repo(&repo)?;
             let mut args = Map::new();
-            args.insert("repo".to_string(), json!(repo));
+            args.insert("owner".to_string(), json!(owner));
+            args.insert("repo".to_string(), json!(name));
             ("get_repository", args)
         }
     };
@@ -1271,6 +1457,8 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
         RedditTools::Search {
             query,
             subreddit,
+            sort,
+            time,
             limit,
         } => {
             let mut args = Map::new();
@@ -1278,20 +1466,28 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
             if let Some(sub) = subreddit {
                 args.insert("subreddit".to_string(), json!(sub));
             }
+            if sort != "relevance" {
+                args.insert("sort".to_string(), json!(sort));
+            }
+            if time != "all" {
+                args.insert("time".to_string(), json!(time));
+            }
             args.insert("limit".to_string(), json!(limit));
-            ("search_reddit", args)
+            ("search", args)
         }
         RedditTools::Hot { subreddit, limit } => {
             let mut args = Map::new();
             args.insert("subreddit".to_string(), json!(subreddit));
             args.insert("limit".to_string(), json!(limit));
-            ("get_subreddit_hot_posts", args)
+            args.insert("sort".to_string(), json!("hot"));
+            ("list", args)
         }
         RedditTools::New { subreddit, limit } => {
             let mut args = Map::new();
             args.insert("subreddit".to_string(), json!(subreddit));
             args.insert("limit".to_string(), json!(limit));
-            ("get_subreddit_new_posts", args)
+            args.insert("sort".to_string(), json!("new"));
+            ("list", args)
         }
         RedditTools::Top {
             subreddit,
@@ -1300,9 +1496,10 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
         } => {
             let mut args = Map::new();
             args.insert("subreddit".to_string(), json!(subreddit));
-            args.insert("time".to_string(), json!(time));
             args.insert("limit".to_string(), json!(limit));
-            ("get_subreddit_top_posts", args)
+            args.insert("sort".to_string(), json!("top"));
+            args.insert("time".to_string(), json!(time));
+            ("list", args)
         }
         RedditTools::Post { id } => {
             let mut args = Map::new();
@@ -1312,7 +1509,7 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
                 format!("https://www.reddit.com/comments/{}", id)
             };
             args.insert("post_url".to_string(), json!(post_url));
-            ("get_post_details", args)
+            ("get", args)
         }
     };
 
@@ -1325,24 +1522,36 @@ pub async fn handle_web(cli: &Cli, tool: WebTools) -> Result<()> {
         WebTools::Scrape { url, format } => {
             let mut args = Map::new();
             args.insert("url".to_string(), json!(url));
-            args.insert("format".to_string(), json!(format));
-            ("scrape", args)
+            let _ = format;
+            ("scrape_url", args)
         }
         WebTools::Extract { url, images, links } => {
+            let _ = (images, links);
             let mut args = Map::new();
             args.insert("url".to_string(), json!(url));
-            args.insert("include_images".to_string(), json!(images));
-            args.insert("include_links".to_string(), json!(links));
             ("extract", args)
         }
         WebTools::Metadata { url } => {
             let mut args = Map::new();
             args.insert("url".to_string(), json!(url));
-            ("get_metadata", args)
+            ("metadata", args)
         }
     };
 
-    call_tool(cli, "web", tool_name, args).await
+    match tool_name {
+        "scrape_url" => call_tool(cli, "web", "scrape_url", args).await,
+        "extract" => {
+            let (payload, meta_value) = call_tool_raw("web", "scrape_url", args).await?;
+            let extracted = payload.get("content").cloned().unwrap_or(Value::Null);
+            output_tool_result(cli, "web", "extract", &extracted, meta_value.as_ref())
+        }
+        "metadata" => {
+            let (payload, meta_value) = call_tool_raw("web", "scrape_url", args).await?;
+            let extracted = payload.get("metadata").cloned().unwrap_or(Value::Null);
+            output_tool_result(cli, "web", "metadata", &extracted, meta_value.as_ref())
+        }
+        _ => unreachable!("tool_name is constructed above"),
+    }
 }
 
 /// Handle wikipedia commands
@@ -1357,12 +1566,14 @@ pub async fn handle_wikipedia(cli: &Cli, tool: WikipediaTools) -> Result<()> {
         WikipediaTools::Article { title } => {
             let mut args = Map::new();
             args.insert("title".to_string(), json!(title));
-            ("get_page", args)
+            args.insert("response_format".to_string(), json!("detailed"));
+            ("get_article", args)
         }
         WikipediaTools::Summary { title } => {
             let mut args = Map::new();
             args.insert("title".to_string(), json!(title));
-            ("get_summary", args)
+            args.insert("response_format".to_string(), json!("concise"));
+            ("get_article", args)
         }
     };
 
@@ -1375,13 +1586,14 @@ pub async fn handle_pubmed(cli: &Cli, tool: PubmedTools) -> Result<()> {
         PubmedTools::Search { query, limit } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("max_results".to_string(), json!(limit));
+            args.insert("limit".to_string(), json!(limit));
             ("search", args)
         }
         PubmedTools::Article { pmid } => {
             let mut args = Map::new();
             args.insert("pmid".to_string(), json!(pmid));
-            ("get_article", args)
+            args.insert("response_format".to_string(), json!("detailed"));
+            ("get", args)
         }
     };
 
@@ -1394,13 +1606,14 @@ pub async fn handle_semantic_scholar(cli: &Cli, tool: SemanticScholarTools) -> R
         SemanticScholarTools::Search { query, limit } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
-            args.insert("limit".to_string(), json!(limit));
-            ("search", args)
+            args.insert("page_size".to_string(), json!(limit));
+            args.insert("page".to_string(), json!(1));
+            ("search_papers", args)
         }
         SemanticScholarTools::Paper { id } => {
             let mut args = Map::new();
             args.insert("paper_id".to_string(), json!(id));
-            ("get_paper", args)
+            ("get_paper_details", args)
         }
         SemanticScholarTools::Citations { id, limit } => {
             let mut args = Map::new();
@@ -1431,7 +1644,7 @@ pub async fn handle_slack(cli: &Cli, tool: SlackTools) -> Result<()> {
             let mut args = Map::new();
             args.insert("channel".to_string(), json!(channel));
             args.insert("limit".to_string(), json!(limit));
-            ("get_channel_history", args)
+            ("list_messages", args)
         }
         SlackTools::Search { query, limit } => {
             let mut args = Map::new();
@@ -1668,7 +1881,7 @@ pub async fn handle_scihub(cli: &Cli, tool: ScihubTools) -> Result<()> {
         ScihubTools::Paper { doi } => {
             let mut args = Map::new();
             args.insert("doi".to_string(), json!(doi));
-            ("get_paper", args)
+            ("get", args)
         }
     };
 
@@ -1748,6 +1961,7 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
             limit,
         } => {
             let mut args = Map::new();
+            args.insert("mode".to_string(), json!("content"));
             args.insert("query".to_string(), json!(query));
             if let Some(d) = directory {
                 args.insert("directory".to_string(), json!(d));
@@ -1756,7 +1970,7 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
                 args.insert("kind".to_string(), json!(k));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("search_content", args)
+            ("search", args)
         }
         SpotlightTools::SearchByName {
             name,
@@ -1764,12 +1978,13 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
             limit,
         } => {
             let mut args = Map::new();
-            args.insert("name".to_string(), json!(name));
+            args.insert("mode".to_string(), json!("name"));
+            args.insert("query".to_string(), json!(name));
             if let Some(d) = directory {
                 args.insert("directory".to_string(), json!(d));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("search_by_name", args)
+            ("search", args)
         }
         SpotlightTools::SearchByKind {
             kind,
@@ -1777,12 +1992,13 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
             limit,
         } => {
             let mut args = Map::new();
+            args.insert("mode".to_string(), json!("kind"));
             args.insert("kind".to_string(), json!(kind));
             if let Some(d) = directory {
                 args.insert("directory".to_string(), json!(d));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("search_by_kind", args)
+            ("search", args)
         }
         SpotlightTools::SearchRecent {
             days,
@@ -1791,6 +2007,7 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
             limit,
         } => {
             let mut args = Map::new();
+            args.insert("mode".to_string(), json!("recent"));
             args.insert("days".to_string(), json!(days));
             if let Some(k) = kind {
                 args.insert("kind".to_string(), json!(k));
@@ -1799,7 +2016,7 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
                 args.insert("directory".to_string(), json!(d));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("search_recent", args)
+            ("search", args)
         }
         SpotlightTools::Metadata { path } => {
             let mut args = Map::new();
@@ -1812,12 +2029,13 @@ pub async fn handle_spotlight(cli: &Cli, tool: SpotlightTools) -> Result<()> {
             limit,
         } => {
             let mut args = Map::new();
+            args.insert("mode".to_string(), json!("raw"));
             args.insert("query".to_string(), json!(query));
             if let Some(d) = directory {
                 args.insert("directory".to_string(), json!(d));
             }
             args.insert("limit".to_string(), json!(limit));
-            ("raw_query", args)
+            ("search", args)
         }
     };
 

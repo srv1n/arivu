@@ -810,6 +810,13 @@ impl crate::Connector for AppleContactsConnector {
             },
         ];
 
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: non-listed tools are still accepted in call_tool().
+        let tools = tools
+            .into_iter()
+            .filter(|t| matches!(t.name.as_ref(), "list_contacts" | "get_contact" | "search"))
+            .collect();
+
         Ok(ListToolsResult {
             tools,
             next_cursor: None,

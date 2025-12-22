@@ -195,206 +195,95 @@ impl Connector for RedditConnector {
         &self,
         _request: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: legacy tools are still accepted in call_tool(), but not listed here.
         let tools = vec![
             Tool {
-                name: Cow::Borrowed("get_user_info"),
-                title: None,
-                description: Some(Cow::Borrowed("Get a Reddit user profile by username")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "username": {
-                            "type": "string",
-                            "description": "The username of the Reddit user (e.g., 'spez')"
-                        }
-                    },
-                    "required": ["username"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_subreddit_top_posts"),
+                name: Cow::Borrowed("list"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Top posts in a specific subreddit (not keyword search)",
+                    "List posts from a subreddit feed (hot/new/top). Use this for browsing a subreddit, not keyword search. Example: subreddit=\"rust\" sort=\"top\" time=\"week\" limit=10.",
                 )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "subreddit": {
                             "type": "string",
-                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
+                            "description": "Subreddit name, with or without r/ prefix (e.g., \"rust\" or \"r/rust\")."
+                        },
+                        "sort": {
+                            "type": "string",
+                            "enum": ["hot", "new", "top"],
+                            "description": "Feed type. Use 'top' with a time window; 'hot' for trending; 'new' for latest.",
+                            "default": "hot"
                         },
                         "time": {
                             "type": "string",
-                            "description": "Time filter: hour, day, week, month, year, all (default: day)",
+                            "enum": ["hour", "day", "week", "month", "year", "all"],
+                            "description": "Only applies when sort='top'. Default: day.",
                             "default": "day"
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "The maximum number of posts to return (default: 10)"
-                        }
-                    },
-                    "required": ["subreddit"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_subreddit_hot_posts"),
-                title: None,
-                description: Some(Cow::Borrowed(
-                    "Trending/hot posts in a specific subreddit",
-                )),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "subreddit": {
-                            "type": "string",
-                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "The maximum number of posts to return (default: 10)"
-                        }
-                    },
-                    "required": ["subreddit"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_subreddit_new_posts"),
-                title: None,
-                description: Some(Cow::Borrowed(
-                    "Newest posts in a specific subreddit",
-                )),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "subreddit": {
-                            "type": "string",
-                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "The maximum number of posts to return (default: 10)"
-                        }
-                    },
-                    "required": ["subreddit"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_subreddit_info"),
-                title: None,
-                description: Some(Cow::Borrowed("Get subreddit metadata by name")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "subreddit": {
-                            "type": "string",
-                            "description": "The subreddit name (e.g., 'rust' or 'r/rust')"
-                        }
-                    },
-                    "required": ["subreddit"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("search_reddit"),
-                title: None,
-                description: Some(Cow::Borrowed(
-                    "Keyword search for posts (use when you have query terms)",
-                )),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query for Reddit posts"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of posts to return",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Max posts to return (default: 10).",
                             "default": 10
-                        },
-                        "author": {
-                            "type": "string",
-                            "description": "Filter by post author username (e.g., 'spez')"
-                        },
-                        "subreddit": {
-                            "type": "string",
-                            "description": "Optional subreddit filter (e.g., 'rust' or 'r/rust')"
-                        },
-                        "flair": {
-                            "type": "string",
-                            "description": "Filter by post flair text"
-                        },
-                        "title": {
-                            "type": "string",
-                            "description": "Search within post titles only"
-                        },
-                        "selftext": {
-                            "type": "string",
-                            "description": "Search within post body text only"
-                        },
-                        "site": {
-                            "type": "string",
-                            "description": "Filter by domain of submitted URL (e.g., 'github.com')"
-                        },
-                        "url": {
-                            "type": "string",
-                            "description": "Filter by URL content"
-                        },
-                        "self": {
-                            "type": "boolean",
-                            "description": "Filter to text posts only when true, link posts only when false"
-                        },
-                        "include_nsfw": {
-                            "type": "boolean",
-                            "description": "Include NSFW results in search",
-                            "default": false
                         }
+                    },
+                    "required": ["subreddit"]
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("search"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Search posts by keywords. Tip: use subreddit=\"rust\" to scope results rather than embedding it in the query string. Example: query=\"async await\" subreddit=\"rust\" limit=10.",
+                )),
+                input_schema: Arc::new(json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query text (keywords)." },
+                        "sort": { "type": "string", "enum": ["relevance", "hot", "new", "top", "comments"], "default": "relevance", "description": "Search sort order." },
+                        "time": { "type": "string", "enum": ["hour", "day", "week", "month", "year", "all"], "default": "all", "description": "Time window filter (maps to Reddit search 't=')." },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                        "subreddit": { "type": "string", "description": "Optional subreddit filter (e.g., \"rust\" or \"r/rust\")." },
+                        "author": { "type": "string", "description": "Optional author filter (e.g., \"spez\")." },
+                        "include_nsfw": { "type": "boolean", "default": false }
                     },
                     "required": ["query"]
-                }).as_object().expect("Schema object").clone()),
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
             },
             Tool {
-                name: Cow::Borrowed("get_post_details"),
+                name: Cow::Borrowed("get"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Post details and comments; requires a post URL",
+                    "Get a post with comments. Provide a full Reddit URL. Tip: set comment_sort=\"best\"|\"top\"|\"new\" and keep comment_limit small for token efficiency.",
                 )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
-                        "post_url": {
-                            "type": "string",
-                            "description": "Full Reddit post URL (not post ID)"
-                        },
-                        "comment_limit": {
-                            "type": "integer",
-                            "description": "The maximum number of top-level comments to return (default: 25)"
-                        },
-                        "comment_sort": {
-                            "type": "string",
-                            "description": "The sort method for comments (default: 'best', options: 'best', 'top', 'new', 'controversial', 'old', 'qa')"
-                        }
+                        "post_url": { "type": "string", "description": "Full Reddit post URL." },
+                        "comment_limit": { "type": "integer", "minimum": 0, "maximum": 200, "default": 25 },
+                        "comment_sort": { "type": "string", "enum": ["best", "top", "new", "controversial", "old", "qa"], "default": "best" }
                     },
                     "required": ["post_url"]
-                }).as_object().expect("Schema object").clone()),
+                })
+                .as_object()
+                .expect("Schema object")
+                .clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
@@ -415,6 +304,143 @@ impl Connector for RedditConnector {
         let args = request.arguments.unwrap_or_default();
 
         match name {
+            // === Canonical, low-ambiguity tools ===
+            "list" | "list_posts" => {
+                let subreddit_name = args.get("subreddit").and_then(|v| v.as_str()).ok_or(
+                    ConnectorError::InvalidParams("Missing 'subreddit' parameter".to_string()),
+                )?;
+                let subreddit_name = subreddit_name.strip_prefix("r/").unwrap_or(subreddit_name);
+                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
+                let sort = args
+                    .get("sort")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("hot")
+                    .to_lowercase();
+
+                match sort.as_str() {
+                    "hot" => {
+                        let subreddit = Subreddit::new(subreddit_name);
+                        let posts = subreddit.hot(limit, None).await.map_err(|e| {
+                            ConnectorError::Other(format!("Failed to fetch hot posts: {}", e))
+                        })?;
+
+                        let results: Vec<_> = posts
+                            .data
+                            .children
+                            .iter()
+                            .map(|post| {
+                                json!({
+                                    "title": post.data.title,
+                                    "url": post.data.url,
+                                    "author": post.data.author,
+                                    "score": post.data.score,
+                                    "num_comments": post.data.num_comments,
+                                    "permalink": format!("https://www.reddit.com{}", post.data.permalink),
+                                    "created_utc": post.data.created_utc,
+                                })
+                            })
+                            .collect();
+
+                        let text = serde_json::to_string(&results)?;
+                        Ok(structured_result_with_text(&results, Some(text))?)
+                    }
+                    "new" => {
+                        let subreddit = Subreddit::new(subreddit_name);
+                        let posts = subreddit.latest(limit, None).await.map_err(|e| {
+                            ConnectorError::Other(format!("Failed to fetch new posts: {}", e))
+                        })?;
+
+                        let results: Vec<_> = posts
+                            .data
+                            .children
+                            .iter()
+                            .map(|post| {
+                                json!({
+                                    "title": post.data.title,
+                                    "url": post.data.url,
+                                    "author": post.data.author,
+                                    "score": post.data.score,
+                                    "num_comments": post.data.num_comments,
+                                    "permalink": format!("https://www.reddit.com{}", post.data.permalink),
+                                    "created_utc": post.data.created_utc,
+                                })
+                            })
+                            .collect();
+
+                        let text = serde_json::to_string(&results)?;
+                        Ok(structured_result_with_text(&results, Some(text))?)
+                    }
+                    "top" => {
+                        let subreddit = Subreddit::new(subreddit_name);
+                        let time = args
+                            .get("time")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("day")
+                            .to_lowercase();
+
+                        let period = match time.as_str() {
+                            "hour" => TimePeriod::Now,
+                            "day" => TimePeriod::Today,
+                            "week" => TimePeriod::ThisWeek,
+                            "month" => TimePeriod::ThisMonth,
+                            "year" => TimePeriod::ThisYear,
+                            "all" => TimePeriod::AllTime,
+                            _ => {
+                                return Err(ConnectorError::InvalidParams(format!(
+                                    "Invalid 'time' value: '{}'. Expected one of: hour, day, week, month, year, all.",
+                                    time
+                                )));
+                            }
+                        };
+
+                        let posts = subreddit
+                            .top(limit, Some(FeedOption::new().period(period)))
+                            .await
+                            .map_err(|e| {
+                                ConnectorError::Other(format!("Failed to fetch top posts: {}", e))
+                            })?;
+
+                        let results: Vec<_> = posts
+                            .data
+                            .children
+                            .iter()
+                            .map(|post| {
+                                json!({
+                                    "title": post.data.title,
+                                    "url": post.data.url,
+                                    "author": post.data.author,
+                                    "score": post.data.score,
+                                    "num_comments": post.data.num_comments,
+                                    "permalink": format!("https://www.reddit.com{}", post.data.permalink),
+                                    "created_utc": post.data.created_utc,
+                                })
+                            })
+                            .collect();
+
+                        let text = serde_json::to_string(&results)?;
+                        Ok(structured_result_with_text(&results, Some(text))?)
+                    }
+                    _ => Err(ConnectorError::InvalidParams(
+                        "sort must be one of: hot, new, top".to_string(),
+                    )),
+                }
+            }
+            "search" | "search_posts" => {
+                let request = CallToolRequestParam {
+                    name: "search_reddit".into(),
+                    arguments: Some(args),
+                };
+                self.call_tool(request).await
+            }
+            "get" | "get_post" => {
+                let request = CallToolRequestParam {
+                    name: "get_post_details".into(),
+                    arguments: Some(args),
+                };
+                self.call_tool(request).await
+            }
+
+            // === Legacy tool names (kept for compatibility) ===
             "get_user_info" => {
                 let username = args.get("username").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'username' parameter".to_string()),
@@ -601,6 +627,16 @@ impl Connector for RedditConnector {
                     ConnectorError::InvalidParams("Missing 'query' parameter".to_string()),
                 )?;
                 let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
+                let sort = args
+                    .get("sort")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("relevance")
+                    .to_lowercase();
+                let time = args
+                    .get("time")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("all")
+                    .to_lowercase();
 
                 // Build advanced search query with optional filters
                 let mut search_query = query.to_string();
@@ -694,12 +730,30 @@ impl Connector for RedditConnector {
                 let client = reqwest::Client::new();
                 let page_size = 25; // Same as in Python code
                 let base_url = "https://www.reddit.com/";
+                let sort_param = match sort.as_str() {
+                    "relevance" | "hot" | "new" | "top" | "comments" => sort.as_str(),
+                    _ => {
+                        return Err(ConnectorError::InvalidParams(
+                            "sort must be one of: relevance, hot, new, top, comments".to_string(),
+                        ));
+                    }
+                };
+                let time_param = match time.as_str() {
+                    "hour" | "day" | "week" | "month" | "year" | "all" => time.as_str(),
+                    _ => {
+                        return Err(ConnectorError::InvalidParams(
+                            "time must be one of: hour, day, week, month, year, all".to_string(),
+                        ));
+                    }
+                };
                 let search_url = format!(
-                    "{}search.json?q={}&limit={}&include_over_18={}",
+                    "{}search.json?q={}&limit={}&include_over_18={}&sort={}&t={}",
                     base_url,
                     urlencoding::encode(&search_query),
                     page_size,
-                    include_nsfw
+                    include_nsfw,
+                    sort_param,
+                    time_param
                 );
 
                 let response = client

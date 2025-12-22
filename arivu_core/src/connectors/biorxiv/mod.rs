@@ -241,7 +241,10 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_recent_preprints"),
                 title: None,
-                description: Some(Cow::Borrowed("Recent preprints from bioRxiv/medRxiv.")),
+                description: Some(Cow::Borrowed(
+                    "List recent preprints from bioRxiv/medRxiv. Use when you want the latest \
+without a query. Example: server=\"biorxiv\" count=10.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -269,7 +272,10 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_preprints_by_date"),
                 title: None,
-                description: Some(Cow::Borrowed("Preprints within a date range.")),
+                description: Some(Cow::Borrowed(
+                    "List preprints within a date range. Use when you need a specific window. \
+Example: server=\"medrxiv\" start_date=\"2024-01-01\" end_date=\"2024-01-31\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -301,7 +307,10 @@ impl Connector for BiorxivConnector {
             Tool {
                 name: Cow::Borrowed("get_preprint_by_doi"),
                 title: None,
-                description: Some(Cow::Borrowed("Preprint details by DOI.")),
+                description: Some(Cow::Borrowed(
+                    "Get preprint details by DOI. Use when you already have a DOI. Example: \
+server=\"biorxiv\" doi=\"10.1101/2024.01.01.000000\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

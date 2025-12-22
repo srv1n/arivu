@@ -82,11 +82,12 @@ impl Connector for SerpapiSearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("SERP search via SerpAPI.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("SERP search via SerpAPI. Use when you need SERP-style results with locality/engine controls. Example: query=\"best rust linter\" limit=5 engine=\"google\".")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
-                "max_results": {"type": "integer", "default": 10},
+                "limit": {"type": "integer", "default": 10},
+                "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                 "engine": {"type": "string", "default": "google"},
                 "hl": {"type": "string"},
                 "gl": {"type": "string"},
@@ -117,7 +118,8 @@ impl Connector for SerpapiSearchConnector {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ConnectorError::InvalidParams("Missing 'query'".into()))?;
         let num = args
-            .get("max_results")
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .or_else(|| args.get("num"))
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
@@ -135,7 +137,12 @@ impl Connector for SerpapiSearchConnector {
         let location = args.get("location").and_then(|v| v.as_str());
         let filters = resolve_search_filters(&args);
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set SERPAPI_API_KEY or use rzn config set serpapi-search {\"api_key\":\"...\"}".into()))?;
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set SERPAPI_API_KEY or run `arivu config set serpapi-search --value <key>`."
+                    .into(),
+            )
+        })?;
 
         let mut params: Vec<(String, String)> = vec![
             ("engine".into(), engine.to_string()),

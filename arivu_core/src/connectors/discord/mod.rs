@@ -158,7 +158,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("list_servers"),
                 title: None,
-                description: Some(Cow::Borrowed("List servers (guilds) for the bot.")),
+                description: Some(Cow::Borrowed(
+                    "List servers (guilds) the bot can access. Use when you need a guild_id.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {},
@@ -170,7 +172,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("get_server_info"),
                 title: None,
-                description: Some(Cow::Borrowed("Server details by guild_id.")),
+                description: Some(Cow::Borrowed(
+                    "Get server details by guild_id. Use after list_servers. Example: guild_id=123.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -185,7 +189,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("list_channels"),
                 title: None,
-                description: Some(Cow::Borrowed("List channels in a server.")),
+                description: Some(Cow::Borrowed(
+                    "List channels in a server. Use when you need a channel_id. Example: guild_id=123.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -200,7 +206,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("read_messages"),
                 title: None,
-                description: Some(Cow::Borrowed("Read recent messages in a channel.")),
+                description: Some(Cow::Borrowed(
+                    "Read recent messages in a channel. Use when you want context. Example: channel_id=456 limit=50.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -216,7 +224,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("send_message"),
                 title: None,
-                description: Some(Cow::Borrowed("Send a message to a channel.")),
+                description: Some(Cow::Borrowed(
+                    "Send a message to a channel. Use when you need to post as the bot. Example: channel_id=456 content=\"hello\".",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -232,7 +242,9 @@ impl Connector for DiscordConnector {
             Tool {
                 name: Cow::Borrowed("search_messages"),
                 title: None,
-                description: Some(Cow::Borrowed("Search messages in a channel.")),
+                description: Some(Cow::Borrowed(
+                    "Search messages in a channel by keyword. Use when you need matches, not chronology. Example: channel_id=456 query=\"deploy\".",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

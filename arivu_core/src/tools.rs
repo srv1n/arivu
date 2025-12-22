@@ -70,7 +70,7 @@ impl Tools {
             .await
             {
                 connectors.insert(
-                    "semantic_scholar".to_string(),
+                    "semantic-scholar".to_string(),
                     Arc::new(Mutex::new(Box::new(c))),
                 );
             }

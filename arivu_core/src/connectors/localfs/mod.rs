@@ -9,6 +9,7 @@ use crate::capabilities::ConnectorConfigSchema;
 use crate::error::ConnectorError;
 use crate::utils::structured_result_with_text;
 use crate::Connector;
+use htmd::HtmlToMarkdown;
 use rmcp::model::*;
 
 mod extractors;
@@ -16,6 +17,32 @@ mod types;
 
 pub use extractors::{detect_file_type, get_extractor_for_path, Extractor};
 pub use types::*;
+
+fn html_to_markdown(html: &str) -> String {
+    let converter = HtmlToMarkdown::builder()
+        .skip_tags(vec![
+            "script", "style", "nav", "footer", "header", "aside", "img", "a", "href", "src",
+        ])
+        .build();
+    converter.convert(html).unwrap_or_else(|_| html.to_string())
+}
+
+fn truncate_to_chars(s: &str, max_chars: usize) -> (String, bool) {
+    if max_chars == 0 {
+        return (String::new(), !s.is_empty());
+    }
+    if s.chars().count() <= max_chars {
+        return (s.to_string(), false);
+    }
+    let mut end = 0;
+    for (i, (idx, _)) in s.char_indices().enumerate() {
+        if i == max_chars {
+            end = idx;
+            break;
+        }
+    }
+    (s[..end].to_string(), true)
+}
 
 /// Expand `~` to the user's home directory
 fn expand_path(path: &str) -> PathBuf {
@@ -221,18 +248,60 @@ impl LocalFsConnector {
                     "Missing 'path' parameter".to_string(),
                 ))?;
 
-        let _format = args
+        let format = args
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("plain");
+        let max_chars: Option<usize> = args
+            .get("max_chars")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
 
         let path_obj = expand_path(path);
-        let extractor = get_extractor_for_path(&path_obj).ok_or(ConnectorError::Other(format!(
-            "Unsupported file type: {}",
-            path_obj.display()
-        )))?;
+        let ext = path_obj
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
-        let text_content = extractor.extract_text(&path_obj)?;
+        let mut text_content: types::TextContent =
+            if format == "markdown" && matches!(ext.as_str(), "html" | "htm" | "xhtml") {
+                let html = std::fs::read_to_string(&path_obj)
+                    .map_err(|e| ConnectorError::Other(format!("Failed to read file: {}", e)))?;
+                let content = html_to_markdown(&html);
+                let word_count = content.split_whitespace().count();
+                let char_count = content.chars().count();
+                types::TextContent {
+                    path: path_obj.to_string_lossy().to_string(),
+                    content,
+                    format: "markdown".to_string(),
+                    word_count,
+                    char_count,
+                    truncated: false,
+                    original_char_count: None,
+                }
+            } else {
+                let extractor = get_extractor_for_path(&path_obj).ok_or(ConnectorError::Other(
+                    format!("Unsupported file type: {}", path_obj.display()),
+                ))?;
+                let mut tc: types::TextContent = extractor.extract_text(&path_obj)?;
+                // Honor requested format (even if identical content for most file types).
+                tc.format = format.to_string();
+                tc
+            };
+
+        if let Some(limit) = max_chars {
+            let original = text_content.char_count;
+            let (truncated, did_truncate) = truncate_to_chars(&text_content.content, limit);
+            if did_truncate {
+                text_content.content = truncated;
+                text_content.original_char_count = Some(original);
+                text_content.char_count = text_content.content.chars().count();
+                text_content.word_count = text_content.content.split_whitespace().count();
+                text_content.truncated = true;
+            }
+        }
+
         let text = serde_json::to_string(&text_content)?;
         structured_result_with_text(&text_content, Some(text))
     }
@@ -283,7 +352,23 @@ impl LocalFsConnector {
             path_obj.display()
         )))?;
 
-        let section_content = extractor.get_section(&path_obj, section)?;
+        let mut section_content = extractor.get_section(&path_obj, section)?;
+
+        let max_chars: Option<usize> = args
+            .get("max_chars")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
+        if let Some(limit) = max_chars {
+            let original = section_content.content.chars().count();
+            let (truncated, did_truncate) = truncate_to_chars(&section_content.content, limit);
+            if did_truncate {
+                section_content.content = truncated;
+                section_content.original_char_count = Some(original);
+                section_content.word_count = section_content.content.split_whitespace().count();
+                section_content.truncated = true;
+            }
+        }
+
         let text = serde_json::to_string(&section_content)?;
         structured_result_with_text(&section_content, Some(text))
     }
@@ -403,7 +488,10 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("list_files"),
                 title: None,
-                description: Some(Cow::Borrowed("List files in a directory.")),
+                description: Some(Cow::Borrowed(
+                    "List files in a directory. Use when you need candidate paths to extract. \
+Example: path=\"~/Downloads\" recursive=false extensions=\"pdf,md\" limit=50.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -440,7 +528,9 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_file_info"),
                 title: None,
-                description: Some(Cow::Borrowed("File metadata by path.")),
+                description: Some(Cow::Borrowed(
+                    "Get file metadata by path. Use when you need size/type/modified time before extracting.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -463,7 +553,10 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("extract_text"),
                 title: None,
-                description: Some(Cow::Borrowed("Extract text from a file.")),
+                description: Some(Cow::Borrowed(
+                    "Extract text from a local file. Use format=\"markdown\" for HTML files \
+(best-effort conversion). Tip: set max_chars to avoid huge outputs. Example: path=\"~/doc.pdf\" max_chars=8000.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -477,6 +570,11 @@ impl Connector for LocalFsConnector {
                                 "description": "Output format - 'plain' (default) or 'markdown'",
                                 "default": "plain",
                                 "enum": ["plain", "markdown"]
+                            },
+                            "max_chars": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Optional max characters to return (truncate content)."
                             }
                         },
                         "required": ["path"]
@@ -492,7 +590,10 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_structure"),
                 title: None,
-                description: Some(Cow::Borrowed("Document structure (TOC/headings).")),
+                description: Some(Cow::Borrowed(
+                    "Get document structure (TOC/headings) so you can request targeted sections. \
+Example: path=\"~/paper.pdf\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -515,7 +616,10 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("get_section"),
                 title: None,
-                description: Some(Cow::Borrowed("Get a section by identifier.")),
+                description: Some(Cow::Borrowed(
+                    "Get a specific section by identifier (use get_structure to discover IDs). \
+Tip: set max_chars to keep responses small. Example: path=\"~/book.epub\" section=\"chapter:3\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -527,6 +631,11 @@ impl Connector for LocalFsConnector {
                             "section": {
                                 "type": "string",
                                 "description": "Section identifier (e.g., 'page:5', 'chapter:3', 'heading:2', 'lines:10-50')"
+                            },
+                            "max_chars": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Optional max characters to return (truncate content)."
                             }
                         },
                         "required": ["path", "section"]
@@ -542,7 +651,10 @@ impl Connector for LocalFsConnector {
             Tool {
                 name: Cow::Borrowed("search_content"),
                 title: None,
-                description: Some(Cow::Borrowed("Search within a file.")),
+                description: Some(Cow::Borrowed(
+                    "Search within a file. Use when you need matching snippets, not the whole \
+document. Example: path=\"~/spec.pdf\" query=\"threat model\" context_lines=2.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

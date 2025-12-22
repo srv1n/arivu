@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.11] - 2025-12-22
+
+### Added
+- YouTube: `youtube/list` to list recent uploads from a channel/playlist (with `published_within_days` / `published_after`) and `youtube/resolve_channel` to reduce ambiguity when selecting an “official” channel.
+- Docs: downstream integration + migration guide (`docs/integrations/DOWNSTREAM_UPGRADE.md`) and updated connector docs to match canonical tool surfaces.
+
+### Changed
+- Standardized “tools for agents” surfaces across multiple connectors (canonical `search`/`get`/`list` where applicable) while keeping legacy tool names callable for compatibility.
+- Fixed YouTube CLI regressions and aligned YouTube/Reddit/arXiv/PubMed resolver routing to canonical tools.
+- Reduced Reddit tool ambiguity by consolidating into `reddit/list`, `reddit/search`, `reddit/get` (with explicit `sort`/`time` parameters on search).
+
 ## [0.2.10] - 2025-12-21
 
 ### Changed
@@ -122,7 +133,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/srv1n/arivu/releases/tag/v0.2.11
 [0.2.10]: https://github.com/srv1n/arivu/releases/tag/v0.2.10
 [0.2.9]: https://github.com/srv1n/arivu/releases/tag/v0.2.9
 [0.2.8]: https://github.com/srv1n/arivu/releases/tag/v0.2.8

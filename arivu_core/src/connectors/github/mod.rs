@@ -171,6 +171,23 @@ struct CodeSearchInput {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct RepoSearchInput {
+    query: String,
+    #[serde(default)]
+    per_page: Option<u8>,
+    #[serde(default)]
+    page: Option<u32>,
+    #[serde(default)]
+    response_format: ResponseFormat,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GetRepositoryInput {
+    owner: String,
+    repo: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct GetFileInput {
     owner: String,
     repo: String,
@@ -204,7 +221,10 @@ impl Connector for GitHubConnector {
             protocol_version: ProtocolVersion::LATEST,
             capabilities: self.capabilities().await,
             server_info: Implementation { name: self.name().to_string(), title: None, version: "0.1.0".to_string(), icons: None, website_url: None },
-            instructions: Some("Set a fine-grained PAT with repo read and metadata scopes: rzn config set github --value <token>".to_string()),
+            instructions: Some(
+                "Set a fine-grained PAT with repo read + metadata scopes: `arivu config set github --value <token>`. Use `search_repositories`/`code_search` for discovery, then `get_repository`/`get_file` for details."
+                    .to_string(),
+            ),
         })
     }
 
@@ -379,6 +399,42 @@ impl Connector for GitHubConnector {
                         "response_format":{"type":"string","enum":["concise","detailed"],"description":"'concise' returns only path/repo/url, 'detailed' includes full metadata","default":"concise"}
                     },
                     "required":["query"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("search_repositories"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Search repositories via GitHub search API (read-only).",
+                )),
+                input_schema: Arc::new(json!({
+                    "type":"object",
+                    "properties":{
+                        "query":{"type":"string","description":"Search query with optional qualifiers (e.g., 'language:rust stars:>5000')"},
+                        "per_page":{"type":"integer","minimum":1,"maximum":100},
+                        "page":{"type":"integer","minimum":1},
+                        "response_format":{"type":"string","enum":["concise","detailed"],"description":"'concise' returns only full_name/url/stars, 'detailed' includes full metadata","default":"concise"}
+                    },
+                    "required":["query"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("get_repository"),
+                title: None,
+                description: Some(Cow::Borrowed("Get repository metadata by owner/repo.")),
+                input_schema: Arc::new(json!({
+                    "type":"object",
+                    "properties":{
+                        "owner":{"type":"string"},
+                        "repo":{"type":"string"}
+                    },
+                    "required":["owner","repo"]
                 }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
@@ -630,6 +686,56 @@ impl Connector for GitHubConnector {
                         None,
                     )
                 }
+            }
+            "search_repositories" => {
+                let input: RepoSearchInput = serde_json::from_value(Value::Object(args_map))
+                    .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+
+                let result = octo
+                    .search()
+                    .repositories(&input.query)
+                    .per_page(input.per_page.unwrap_or(50))
+                    .page(input.page.unwrap_or(1))
+                    .send()
+                    .await
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+
+                if input.response_format == ResponseFormat::Concise {
+                    let concise_items: Vec<_> = result
+                        .items
+                        .iter()
+                        .map(|r| {
+                            json!({
+                                "full_name": r.full_name,
+                                "html_url": r.html_url,
+                                "description": r.description,
+                                "stargazers_count": r.stargazers_count,
+                                "language": r.language,
+                            })
+                        })
+                        .collect();
+                    structured_result_with_text(
+                        &json!({"items": concise_items, "total_count": result.total_count}),
+                        None,
+                    )
+                } else {
+                    structured_result_with_text(
+                        &json!({"total_count": result.total_count, "incomplete_results": result.incomplete_results, "items": result.items}),
+                        None,
+                    )
+                }
+            }
+            "get_repository" => {
+                let input: GetRepositoryInput = serde_json::from_value(Value::Object(args_map))
+                    .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+                let repo = octo
+                    .repos(&input.owner, &input.repo)
+                    .get()
+                    .await
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+                let v = serde_json::to_value(&repo)
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+                structured_result_with_text(&v, None)
             }
             "auth_start" => {
                 let client = reqwest::Client::new();

@@ -330,18 +330,29 @@ impl crate::Connector for SpotlightConnector {
         &self,
         _request: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: legacy tools are still accepted in call_tool(), but not listed here.
         let tools = vec![
             Tool {
-                name: Cow::Borrowed("search_content"),
-                title: Some("Search File Contents".to_string()),
-                description: Some(Cow::Borrowed("Full-text search in Spotlight index.")),
+                name: Cow::Borrowed("search"),
+                title: Some("Search Spotlight".to_string()),
+                description: Some(Cow::Borrowed(
+                    "Search Spotlight index by content/name/kind/recent/raw. Use mode to choose \
+the search type. Example: mode=\"content\" query=\"invoice\" directory=\"~/Documents\" limit=20.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": ["content", "name", "kind", "recent", "raw"],
+                                "description": "Search mode. Use 'content' for full-text, 'name' for file names, 'kind' for file types, 'recent' for modified files, 'raw' for mdfind syntax.",
+                                "default": "content"
+                            },
                             "query": {
                                 "type": "string",
-                                "description": "Text to search for within file contents"
+                                "description": "Search query text. Required for mode=content/name/raw."
                             },
                             "directory": {
                                 "type": "string",
@@ -349,111 +360,27 @@ impl crate::Connector for SpotlightConnector {
                             },
                             "kind": {
                                 "type": "string",
-                                "description": "Optional: filter by file type (pdf, image, video, audio, document, email, code, text, markdown, spreadsheet, presentation)",
-                                "enum": ["pdf", "image", "video", "audio", "document", "email", "code", "text", "markdown", "spreadsheet", "presentation"]
+                                "description": "File type filter for mode=content/recent OR required file type for mode=kind.",
+                                "enum": [
+                                    "pdf",
+                                    "image",
+                                    "video",
+                                    "audio",
+                                    "document",
+                                    "email",
+                                    "code",
+                                    "text",
+                                    "markdown",
+                                    "spreadsheet",
+                                    "presentation",
+                                    "application",
+                                    "folder"
+                                ]
                             },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of results (default: 50)",
-                                "default": 50
-                            }
-                        },
-                        "required": ["query"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("search_by_name"),
-                title: Some("Search by File Name".to_string()),
-                description: Some(Cow::Borrowed("Search files by name (fast).")),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "File name or partial name to search for"
-                            },
-                            "directory": {
-                                "type": "string",
-                                "description": "Optional: limit search to this directory"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of results (default: 50)",
-                                "default": 50
-                            }
-                        },
-                        "required": ["name"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("search_by_kind"),
-                title: Some("Search by File Type".to_string()),
-                description: Some(Cow::Borrowed("Find files by kind/type.")),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "description": "File type to search for",
-                                "enum": ["pdf", "image", "video", "audio", "document", "email", "code", "text", "markdown", "spreadsheet", "presentation", "application", "folder"]
-                            },
-                            "directory": {
-                                "type": "string",
-                                "description": "Optional: limit search to this directory"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of results (default: 50)",
-                                "default": 50
-                            }
-                        },
-                        "required": ["kind"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("search_recent"),
-                title: Some("Search Recently Modified Files".to_string()),
-                description: Some(Cow::Borrowed("Find recently modified files.")),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
                             "days": {
                                 "type": "integer",
-                                "description": "Find files modified within this many days (default: 7)",
+                                "description": "Only for mode=recent: modified within N days (default: 7).",
                                 "default": 7
-                            },
-                            "kind": {
-                                "type": "string",
-                                "description": "Optional: filter by file type",
-                                "enum": ["pdf", "image", "video", "audio", "document", "email", "code", "text", "markdown", "spreadsheet", "presentation"]
-                            },
-                            "directory": {
-                                "type": "string",
-                                "description": "Optional: limit search to this directory"
                             },
                             "limit": {
                                 "type": "integer",
@@ -474,7 +401,10 @@ impl crate::Connector for SpotlightConnector {
             Tool {
                 name: Cow::Borrowed("get_metadata"),
                 title: Some("Get File Metadata".to_string()),
-                description: Some(Cow::Borrowed("Spotlight metadata by path.")),
+                description: Some(Cow::Borrowed(
+                    "Get Spotlight metadata for a file path. Use when you already have a path \
+and want its indexed attributes.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -485,38 +415,6 @@ impl crate::Connector for SpotlightConnector {
                             }
                         },
                         "required": ["path"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("raw_query"),
-                title: Some("Raw Spotlight Query".to_string()),
-                description: Some(Cow::Borrowed("Run a raw mdfind query.")),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Raw mdfind query string"
-                            },
-                            "directory": {
-                                "type": "string",
-                                "description": "Optional: limit search to this directory"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of results (default: 50)",
-                                "default": 50
-                            }
-                        },
-                        "required": ["query"]
                     })
                     .as_object()
                     .unwrap()
@@ -542,6 +440,81 @@ impl crate::Connector for SpotlightConnector {
         let args = request.arguments.unwrap_or_default();
 
         match name {
+            "search" => {
+                let mode = args
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("content");
+                let directory = args.get("directory").cloned();
+                let limit = args.get("limit").cloned();
+
+                let mut mapped = serde_json::Map::new();
+                if let Some(d) = directory {
+                    mapped.insert("directory".to_string(), d);
+                }
+                if let Some(l) = limit {
+                    mapped.insert("limit".to_string(), l);
+                }
+
+                let legacy_tool = match mode {
+                    "content" => {
+                        let query = args.get("query").cloned().ok_or_else(|| {
+                            ConnectorError::InvalidInput("Missing 'query' for mode=content".into())
+                        })?;
+                        mapped.insert("query".to_string(), query);
+                        if let Some(k) = args.get("kind").cloned() {
+                            mapped.insert("kind".to_string(), k);
+                        }
+                        "search_content"
+                    }
+                    "name" => {
+                        let query = args
+                            .get("query")
+                            .or_else(|| args.get("name"))
+                            .cloned()
+                            .ok_or_else(|| {
+                                ConnectorError::InvalidInput("Missing 'query' for mode=name".into())
+                            })?;
+                        mapped.insert("name".to_string(), query);
+                        "search_by_name"
+                    }
+                    "kind" => {
+                        let kind = args.get("kind").cloned().ok_or_else(|| {
+                            ConnectorError::InvalidInput("Missing 'kind' for mode=kind".into())
+                        })?;
+                        mapped.insert("kind".to_string(), kind);
+                        "search_by_kind"
+                    }
+                    "recent" => {
+                        if let Some(days) = args.get("days").cloned() {
+                            mapped.insert("days".to_string(), days);
+                        }
+                        if let Some(k) = args.get("kind").cloned() {
+                            mapped.insert("kind".to_string(), k);
+                        }
+                        "search_recent"
+                    }
+                    "raw" => {
+                        let query = args.get("query").cloned().ok_or_else(|| {
+                            ConnectorError::InvalidInput("Missing 'query' for mode=raw".into())
+                        })?;
+                        mapped.insert("query".to_string(), query);
+                        "raw_query"
+                    }
+                    _ => {
+                        return Err(ConnectorError::InvalidInput(format!(
+                            "Invalid 'mode': {}",
+                            mode
+                        )));
+                    }
+                };
+
+                let request = CallToolRequestParam {
+                    name: legacy_tool.into(),
+                    arguments: Some(mapped),
+                };
+                self.call_tool(request).await
+            }
             "search_content" => {
                 let query_text = args
                     .get("query")

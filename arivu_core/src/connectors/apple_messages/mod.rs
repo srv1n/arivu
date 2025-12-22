@@ -701,6 +701,18 @@ impl crate::Connector for AppleMessagesConnector {
             },
         ];
 
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: non-listed tools are still accepted in call_tool().
+        let tools = tools
+            .into_iter()
+            .filter(|t| {
+                matches!(
+                    t.name.as_ref(),
+                    "list_chats" | "get_recent_messages" | "send_message"
+                )
+            })
+            .collect();
+
         Ok(ListToolsResult {
             tools,
             next_cursor: None,

@@ -174,8 +174,8 @@ async fn main() {
                 Some(Commands::Localfs { tool }) => {
                     connectors::handle_localfs(&cli, tool.clone()).await
                 }
-                Some(Commands::Youtube { tool }) => {
-                    connectors::handle_youtube(&cli, tool.clone()).await
+                Some(Commands::Youtube { args }) => {
+                    connectors::handle_youtube(&cli, args.clone()).await
                 }
                 Some(Commands::Hackernews { tool }) => {
                     connectors::handle_hackernews(&cli, tool.clone()).await

@@ -94,7 +94,8 @@ impl Connector for FirecrawlSearchConnector {
                 "properties": {
                     "query": {"type": "string"},
                     "sources": {"type": "array", "items": {"type": "string", "enum": ["web", "images", "news"]}, "default": ["web"]},
-                    "max_results": {"type": "integer", "default": 10},
+                    "limit": {"type": "integer", "default": 10},
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "scrape": {"type": "boolean", "default": true, "description": "Fetch and parse content"},
                     "date_preset": {"type": "string", "description": "last_24_hours|last_7_days|last_30_days|this_month|past_year"},
                     "locale": {"type": "string", "description": "Locale like en-US or fr-FR"},
@@ -135,8 +136,8 @@ impl Connector for FirecrawlSearchConnector {
             })
             .unwrap_or_else(|| vec!["web".to_string()]);
         let limit = args
-            .get("max_results")
-            .or_else(|| args.get("limit"))
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
         let scrape = args.get("scrape").and_then(|v| v.as_bool()).unwrap_or(true);
@@ -146,7 +147,12 @@ impl Connector for FirecrawlSearchConnector {
             .map(|s| s == "detailed")
             .unwrap_or(false);
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set FIRECRAWL_API_KEY or use rzn config set firecrawl-search {\"api_key\":\"...\"}".into()))?;
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set FIRECRAWL_API_KEY or run `arivu config set firecrawl-search --value <key>`."
+                    .into(),
+            )
+        })?;
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,

@@ -769,24 +769,15 @@ impl crate::Connector for AppleMailConnector {
         &self,
         _request: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: additional legacy tools are still accepted in call_tool().
         let tools = vec![
-            // Account & Mailbox Management
-            Tool {
-                name: Cow::Borrowed("list_accounts"),
-                title: Some("List Mail Accounts".to_string()),
-                description: Some(Cow::Borrowed(
-                    "List all email accounts configured in Mail.app. Returns account names, IDs, and associated email addresses. Use this to discover available accounts before listing mailboxes.",
-                )),
-                input_schema: Arc::new(json!({"type": "object", "properties": {}}).as_object().unwrap().clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
             Tool {
                 name: Cow::Borrowed("list_mailboxes"),
                 title: Some("List Mailboxes".to_string()),
                 description: Some(Cow::Borrowed(
-                    "List mailboxes (folders) in Mail.app. Shows INBOX, Sent, Drafts, and custom folders with unread/total counts. Optionally filter by account name.",
+                    "List mailboxes (folders) in Mail.app (requires explicit user permission). \
+Example: account=\"iCloud\".",
                 )),
                 input_schema: Arc::new(
                     json!({
@@ -794,7 +785,7 @@ impl crate::Connector for AppleMailConnector {
                         "properties": {
                             "account": {
                                 "type": "string",
-                                "description": "Filter to specific account name. If omitted, lists mailboxes from all accounts."
+                                "description": "Optional account name filter (e.g., \"iCloud\")."
                             }
                         }
                     })
@@ -806,30 +797,20 @@ impl crate::Connector for AppleMailConnector {
                 annotations: None,
                 icons: None,
             },
-            // Message Listing & Reading
             Tool {
                 name: Cow::Borrowed("list_messages"),
                 title: Some("List Messages".to_string()),
                 description: Some(Cow::Borrowed(
-                    "List messages in a mailbox. Returns message summaries including subject, sender, date, read/flagged status. Sorted by date (newest first). Use 'get_message' for full content.",
+                    "List message summaries in a mailbox (requires explicit user permission). \
+Use get_message for full bodies. Example: mailbox=\"INBOX\" limit=20.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "mailbox": {
-                                "type": "string",
-                                "description": "Mailbox name (e.g., 'INBOX', 'Sent', 'Drafts'). Required."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Account name. Required if mailbox name exists in multiple accounts."
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum messages to return. Default: 20, Max: 100.",
-                                "default": 20
-                            }
+                            "mailbox": { "type": "string", "description": "Mailbox name (e.g., INBOX)." },
+                            "account": { "type": "string", "description": "Optional account name (required if mailbox is ambiguous)." },
+                            "limit": { "type": "integer", "default": 20, "description": "Max messages (default 20, max 100)." }
                         },
                         "required": ["mailbox"]
                     })
@@ -843,23 +824,17 @@ impl crate::Connector for AppleMailConnector {
             },
             Tool {
                 name: Cow::Borrowed("get_message"),
-                title: Some("Get Message Content".to_string()),
+                title: Some("Get Message".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Retrieve full content of a specific email by its message ID. Returns subject, sender, recipients, date, and the message body text. Use message IDs from list_messages or search.",
+                    "Get one email by message_id (requires explicit user permission). Tip: set \
+max_content_length to keep output small. Example: message_id=\"123\" max_content_length=8000.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "The message ID (numeric) obtained from list_messages or search. Required."
-                            },
-                            "max_content_length": {
-                                "type": "integer",
-                                "description": "Maximum characters of message body to return. Default: 10000.",
-                                "default": 10000
-                            }
+                            "message_id": { "type": "string", "description": "Message ID from list_messages/search." },
+                            "max_content_length": { "type": "integer", "default": 10000, "description": "Max characters of body to return." }
                         },
                         "required": ["message_id"]
                     })
@@ -871,34 +846,21 @@ impl crate::Connector for AppleMailConnector {
                 annotations: None,
                 icons: None,
             },
-            // Search
             Tool {
                 name: Cow::Borrowed("search"),
                 title: Some("Search Emails".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Search emails by keyword. Searches subject, sender, and message content. Optionally scope to specific mailbox/account. Returns matching message summaries.",
+                    "Search emails by keyword (requires explicit user permission). Use to find \
+message IDs, then call get_message. Example: query=\"invoice\" mailbox=\"INBOX\" limit=10.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search term to find in subject, sender, or body. Required."
-                            },
-                            "mailbox": {
-                                "type": "string",
-                                "description": "Limit search to specific mailbox."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Limit search to specific account."
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum results. Default: 20.",
-                                "default": 20
-                            }
+                            "query": { "type": "string", "description": "Keyword query." },
+                            "mailbox": { "type": "string", "description": "Optional mailbox scope." },
+                            "account": { "type": "string", "description": "Optional account scope." },
+                            "limit": { "type": "integer", "default": 20, "description": "Max results." }
                         },
                         "required": ["query"]
                     })
@@ -910,37 +872,22 @@ impl crate::Connector for AppleMailConnector {
                 annotations: None,
                 icons: None,
             },
-            // Composing
             Tool {
                 name: Cow::Borrowed("create_draft"),
                 title: Some("Create Draft".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Create a new email draft and open it in Mail.app for review. The draft window will appear for final editing before sending. Supports multiple recipients (comma-separated).",
+                    "Create a draft email in Mail.app for user review (requires explicit user \
+permission). Prefer this over send_message.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "to": {
-                                "type": "string",
-                                "description": "Recipient email address(es). Comma-separated for multiple. Required."
-                            },
-                            "subject": {
-                                "type": "string",
-                                "description": "Email subject line. Required."
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Email body text. Required."
-                            },
-                            "cc": {
-                                "type": "string",
-                                "description": "CC recipients. Comma-separated for multiple."
-                            },
-                            "bcc": {
-                                "type": "string",
-                                "description": "BCC recipients. Comma-separated for multiple."
-                            }
+                            "to": { "type": "string", "description": "Recipients (comma-separated)." },
+                            "subject": { "type": "string" },
+                            "body": { "type": "string" },
+                            "cc": { "type": "string" },
+                            "bcc": { "type": "string" }
                         },
                         "required": ["to", "subject", "body"]
                     })
@@ -956,183 +903,19 @@ impl crate::Connector for AppleMailConnector {
                 name: Cow::Borrowed("send_message"),
                 title: Some("Send Email".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Compose and immediately send an email. Use with caution - message is sent without preview. For review before sending, use 'create_draft' instead.",
+                    "Send an email immediately (requires explicit user permission + explicit \
+confirmation). If the user hasn't confirmed, use create_draft instead.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "to": {
-                                "type": "string",
-                                "description": "Recipient email address(es). Comma-separated for multiple. Required."
-                            },
-                            "subject": {
-                                "type": "string",
-                                "description": "Email subject line. Required."
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Email body text. Required."
-                            },
-                            "cc": {
-                                "type": "string",
-                                "description": "CC recipients. Comma-separated for multiple."
-                            }
+                            "to": { "type": "string", "description": "Recipients (comma-separated)." },
+                            "subject": { "type": "string" },
+                            "body": { "type": "string" },
+                            "cc": { "type": "string" }
                         },
                         "required": ["to", "subject", "body"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("reply"),
-                title: Some("Reply to Email".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Create a reply draft to an existing email. Opens in Mail.app with original message quoted. Use reply_all to include all original recipients.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "ID of message to reply to. Required."
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Reply text to prepend above the quoted original. Required."
-                            },
-                            "reply_all": {
-                                "type": "boolean",
-                                "description": "If true, reply to all recipients. Default: false.",
-                                "default": false
-                            }
-                        },
-                        "required": ["message_id", "body"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            // Message Management
-            Tool {
-                name: Cow::Borrowed("mark_read"),
-                title: Some("Mark as Read/Unread".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Mark an email as read or unread.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "Message ID. Required."
-                            },
-                            "read": {
-                                "type": "boolean",
-                                "description": "True to mark read, false for unread. Default: true.",
-                                "default": true
-                            }
-                        },
-                        "required": ["message_id"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("mark_flagged"),
-                title: Some("Flag/Unflag Email".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Flag or unflag an email for follow-up.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "Message ID. Required."
-                            },
-                            "flagged": {
-                                "type": "boolean",
-                                "description": "True to flag, false to unflag. Default: true.",
-                                "default": true
-                            }
-                        },
-                        "required": ["message_id"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("move_message"),
-                title: Some("Move Message".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Move an email to a different mailbox/folder.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "Message ID. Required."
-                            },
-                            "target_mailbox": {
-                                "type": "string",
-                                "description": "Destination mailbox name (e.g., 'Archive', 'Important'). Required."
-                            },
-                            "target_account": {
-                                "type": "string",
-                                "description": "Account containing target mailbox. Required if ambiguous."
-                            }
-                        },
-                        "required": ["message_id", "target_mailbox"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("delete_message"),
-                title: Some("Delete Email".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Delete an email (moves to Trash). Use with caution.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "Message ID to delete. Required."
-                            }
-                        },
-                        "required": ["message_id"]
                     })
                     .as_object()
                     .unwrap()

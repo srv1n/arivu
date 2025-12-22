@@ -302,6 +302,7 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
                 .await
         {
             registry.register_provider(Box::new(connector));
+            registry.register_alias("semantic_scholar", "semantic-scholar");
         }
     }
 

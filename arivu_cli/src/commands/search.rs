@@ -1,9 +1,10 @@
 use crate::cli::Cli;
+use crate::commands::tool_mappings::generic_search_tool_and_args;
 use crate::commands::usage_helpers::print_cost_summary;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, format_pretty, OutputData};
 use arivu_core::federated::{FederatedSearch, MergeMode, ProfileStore, SearchProfile};
-use arivu_core::{CallToolRequestParam, PaginatedRequestParam, ProviderRegistry};
+use arivu_core::{CallToolRequestParam, ProviderRegistry};
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
@@ -93,33 +94,13 @@ async fn run_single_search(cli: &Cli, connector_name: &str, query: &str, limit: 
         .ok_or_else(|| CommandError::ConnectorNotFound(connector_name.to_string()))?
         .clone();
 
-    // List available tools to find the search tool
     let c = provider.lock().await;
-    let tools_response = c
-        .list_tools(Some(PaginatedRequestParam { cursor: None }))
-        .await?;
-
-    // Find appropriate search tool
-    let search_tool = tools_response
-        .tools
-        .iter()
-        .find(|tool| tool.name.contains("search") || tool.name.contains("query"))
-        .ok_or_else(|| {
-            CommandError::ToolNotFound("search".to_string(), connector_name.to_string())
-        })?;
+    let (tool_name, arguments) = generic_search_tool_and_args(connector_name, query, limit)?;
 
     // Prepare search request
     let request = CallToolRequestParam {
-        name: search_tool.name.clone(),
-        arguments: Some(
-            json!({
-                "query": query,
-                "limit": limit
-            })
-            .as_object()
-            .expect("JSON object")
-            .clone(),
-        ),
+        name: tool_name.into(),
+        arguments: Some(arguments),
     };
 
     let response = c.call_tool(request).await?;

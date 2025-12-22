@@ -23,6 +23,10 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use url::Url;
 use yt_transcript_rs::YouTubeTranscriptApi;
+use {
+    quick_xml::events::Event as XmlEvent, quick_xml::reader::Reader as XmlReader,
+    reqwest::Client as HttpClient,
+};
 
 // Input/Output structs for tools
 /// Response format for controlling output verbosity
@@ -70,6 +74,118 @@ pub struct SearchVideosInput {
 
 fn default_limit() -> u64 {
     5
+}
+
+fn default_list_limit() -> u64 {
+    5
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ListSource {
+    Channel,
+    Playlist,
+}
+
+fn default_list_source() -> ListSource {
+    ListSource::Channel
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ListVideosInput {
+    /// What you are listing: a channel's uploads or a playlist's items.
+    #[serde(default = "default_list_source")]
+    #[schemars(default = "default_list_source")]
+    pub source: ListSource,
+
+    /// Channel identifier. Accepts a channel ID (UC...), a channel URL, or a handle like "@hubermanlab".
+    #[serde(default)]
+    pub channel: Option<String>,
+
+    /// Playlist identifier. Accepts a playlist ID (PL.../UU...) or a playlist URL.
+    #[serde(default)]
+    pub playlist: Option<String>,
+
+    /// Max number of videos to return (default: 5).
+    #[serde(default = "default_list_limit")]
+    #[schemars(default = "default_list_limit")]
+    pub limit: u64,
+
+    /// Optional RFC3339 timestamp; only include videos published at/after this time.
+    #[serde(default)]
+    pub published_after: Option<String>,
+
+    /// Optional relative filter; only include videos published in the last N days (UTC, relative to now).
+    /// If provided, this overrides published_after.
+    #[serde(default)]
+    pub published_within_days: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ListedVideo {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub published_at: Option<String>,
+    pub channel_title: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ListVideosOutput {
+    pub videos: Vec<ListedVideo>,
+    pub source: ListSource,
+    pub channel_id: Option<String>,
+    pub playlist_id: Option<String>,
+}
+
+fn default_resolve_limit() -> u64 {
+    5
+}
+
+fn default_prefer_verified() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ResolveChannelInput {
+    /// Free-text channel query (e.g., "Andrew Huberman"). Returns candidate channels.
+    #[serde(default)]
+    pub query: Option<String>,
+
+    /// Explicit channel identifier to normalize to a channel ID (UC...) when possible.
+    /// Accepts a channel ID, channel URL, or handle like "@hubermanlab".
+    #[serde(default)]
+    pub channel: Option<String>,
+
+    /// Max candidates to return (default: 5).
+    #[serde(default = "default_resolve_limit")]
+    #[schemars(default = "default_resolve_limit")]
+    pub limit: u64,
+
+    /// Prefer verified channels when ranking candidates (default: true).
+    #[serde(default = "default_prefer_verified")]
+    #[schemars(default = "default_prefer_verified")]
+    pub prefer_verified: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct ChannelCandidate {
+    pub channel_id: String,
+    pub title: String,
+    pub url: String,
+    pub verified: bool,
+    pub subscribers: u64,
+    pub score: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ResolveChannelOutput {
+    /// Heuristic best guess (may be None if no candidates found).
+    pub recommended: Option<ChannelCandidate>,
+    /// Ranked candidates (best first).
+    pub candidates: Vec<ChannelCandidate>,
+    /// When `channel` was provided, this is the normalized UC... ID if resolved.
+    pub resolved_channel_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -771,10 +887,11 @@ impl Connector for YouTubeConnector {
     ) -> Result<ListToolsResult, ConnectorError> {
         let tools = vec![
             Tool {
-                name: Cow::Borrowed("get_video_details"),
+                name: Cow::Borrowed("get"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Video details + transcript; accepts video ID or URL.",
+                    "Get title/description plus transcript + chapters (when available). Input is a \
+	video ID or URL. Example: video_id=\"dQw4w9WgXcQ\" response_format=\"concise\".",
                 )),
                 input_schema: Arc::new(
                     serde_json::to_value(schemars::schema_for!(GetVideoDetailsInput))
@@ -788,13 +905,52 @@ impl Connector for YouTubeConnector {
                 icons: None,
             },
             Tool {
-                name: Cow::Borrowed("search_videos"),
+                name: Cow::Borrowed("search"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Search videos/playlists/channels with filters.",
+                    "Search YouTube. Returns IDs/URLs you can pass to get. Tip: set \
+	search_type=\"video\" unless you explicitly want playlists/channels. Example: query=\"rust\" limit=5.",
                 )),
                 input_schema: Arc::new(
                     serde_json::to_value(schemars::schema_for!(SearchVideosInput))
+                        .map_err(|e| ConnectorError::Other(e.to_string()))?
+                        .as_object()
+                        .expect("Schema object")
+                        .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("list"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "List recent uploads from a channel or playlist. Use this to answer queries like \
+\"last 5 videos from @hubermanlab\" or \"videos from the last week\". Example: \
+source=\"channel\" channel=\"@hubermanlab\" limit=5 published_within_days=7.",
+                )),
+                input_schema: Arc::new(
+                    serde_json::to_value(schemars::schema_for!(ListVideosInput))
+                        .map_err(|e| ConnectorError::Other(e.to_string()))?
+                        .as_object()
+                        .expect("Schema object")
+                        .clone(),
+                ),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("resolve_channel"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Resolve an \"official\" channel. Use this when you have a channel name/handle and want a \
+stable UC... channel ID. If query is provided, returns ranked candidates (verified preferred) to reduce ambiguity. \
+Example: query=\"Andrew Huberman\" limit=5 prefer_verified=true.",
+                )),
+                input_schema: Arc::new(
+                    serde_json::to_value(schemars::schema_for!(ResolveChannelInput))
                         .map_err(|e| ConnectorError::Other(e.to_string()))?
                         .as_object()
                         .expect("Schema object")
@@ -821,7 +977,7 @@ impl Connector for YouTubeConnector {
         let args_map = serde_json::Map::from_iter(args);
 
         match name {
-            "get_video_details" => {
+            "get" | "get_video_details" => {
                 let input: GetVideoDetailsInput =
                     serde_json::from_value(Value::Object(args_map))
                         .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
@@ -914,7 +1070,7 @@ impl Connector for YouTubeConnector {
                     Ok(structured_result_with_text(&youtube_content, Some(text))?)
                 }
             }
-            "search_videos" => {
+            "search" | "search_videos" => {
                 let input: SearchVideosInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
 
@@ -1036,6 +1192,179 @@ impl Connector for YouTubeConnector {
                     Ok(structured_result_with_text(&output, Some(text))?)
                 }
             }
+            "list" | "list_videos" => {
+                let input: ListVideosInput = serde_json::from_value(Value::Object(args_map))
+                    .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+
+                let limit = input.limit.clamp(1, 50) as usize;
+                let client = HttpClient::builder()
+                    .user_agent("rzn-datasourcer/0.2.x youtube-connector")
+                    .timeout(std::time::Duration::from_secs(20))
+                    .build()
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+
+                let (feed_url, channel_id, playlist_id) = match input.source {
+                    ListSource::Channel => {
+                        let Some(ch) = input.channel.as_deref() else {
+                            return Err(ConnectorError::InvalidParams(
+                                "source='channel' requires 'channel'".to_string(),
+                            ));
+                        };
+                        let cid =
+                            resolve_channel_id_best_effort(&client, ch).await.ok_or_else(|| {
+                                ConnectorError::InvalidInput(
+                                    "Could not resolve channel_id from channel input. Provide a UC... channel ID or a full channel URL."
+                                        .to_string(),
+                                )
+                            })?;
+                        (feed_url_for_channel(&cid), Some(cid), None)
+                    }
+                    ListSource::Playlist => {
+                        let Some(pl) = input.playlist.as_deref() else {
+                            return Err(ConnectorError::InvalidParams(
+                                "source='playlist' requires 'playlist'".to_string(),
+                            ));
+                        };
+                        let pid = extract_playlist_id_from_str(pl).ok_or_else(|| {
+                            ConnectorError::InvalidInput(
+                                "Could not parse playlist ID from playlist input. Provide a playlist ID or playlist URL."
+                                    .to_string(),
+                            )
+                        })?;
+                        (feed_url_for_playlist(&pid), None, Some(pid))
+                    }
+                };
+
+                let xml = client
+                    .get(&feed_url)
+                    .send()
+                    .await
+                    .map_err(ConnectorError::HttpRequest)?
+                    .text()
+                    .await
+                    .map_err(ConnectorError::HttpRequest)?;
+
+                let mut videos = parse_youtube_atom_feed(&xml)?;
+
+                let after = if let Some(days) = input.published_within_days {
+                    Some(Utc::now() - Duration::days(days as i64))
+                } else {
+                    input.published_after.as_deref().and_then(parse_rfc3339)
+                };
+                if let Some(after) = after {
+                    videos.retain(|v| {
+                        v.published_at
+                            .as_deref()
+                            .and_then(parse_rfc3339)
+                            .map(|dt| dt >= after)
+                            .unwrap_or(false)
+                    });
+                }
+
+                videos.sort_by(|a, b| {
+                    let ad = a
+                        .published_at
+                        .as_deref()
+                        .and_then(parse_rfc3339)
+                        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+                    let bd = b
+                        .published_at
+                        .as_deref()
+                        .and_then(parse_rfc3339)
+                        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+                    bd.cmp(&ad)
+                });
+
+                videos.truncate(limit);
+
+                let out = ListVideosOutput {
+                    videos,
+                    source: input.source,
+                    channel_id,
+                    playlist_id,
+                };
+                let text = serde_json::to_string(&out)?;
+                Ok(structured_result_with_text(&out, Some(text))?)
+            }
+            "resolve_channel" => {
+                let input: ResolveChannelInput = serde_json::from_value(Value::Object(args_map))
+                    .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+
+                let limit = input.limit.clamp(1, 10) as usize;
+
+                let client = HttpClient::builder()
+                    .user_agent("rzn-datasourcer/0.2.x youtube-connector")
+                    .timeout(std::time::Duration::from_secs(20))
+                    .build()
+                    .map_err(|e| ConnectorError::Other(e.to_string()))?;
+
+                // If a concrete channel identifier was provided, normalize to UC... when possible.
+                let resolved_channel_id = if let Some(ch) = input.channel.as_deref() {
+                    resolve_channel_id_best_effort(&client, ch).await
+                } else {
+                    None
+                };
+
+                // If query is provided, return ranked candidates.
+                let mut candidates: Vec<ChannelCandidate> = Vec::new();
+                if let Some(q) = input.query.as_deref() {
+                    let qn = normalize_ws(q);
+                    if !qn.is_empty() {
+                        let youtube =
+                            YouTube::new().map_err(|e| ConnectorError::Other(e.to_string()))?;
+                        let search_options = SearchOptions {
+                            limit: limit as u64,
+                            search_type: SearchType::Channel,
+                            ..Default::default()
+                        };
+
+                        let results: Vec<SearchResult> =
+                            AssertUnwindSafe(youtube.search(&qn, Some(&search_options)))
+                                .catch_unwind()
+                                .await
+                                .map_err(|_| {
+                                    ConnectorError::Other("YouTube search panicked".to_string())
+                                })?
+                                .map_err(|e| ConnectorError::Other(e.to_string()))?;
+
+                        for r in results {
+                            if let SearchResult::Channel(channel) = r {
+                                let mapped: ChannelSearchResult = channel.into();
+                                let score = score_channel_candidate(
+                                    &qn,
+                                    &mapped.title,
+                                    mapped.verified,
+                                    mapped.subscribers,
+                                    input.prefer_verified,
+                                );
+                                candidates.push(ChannelCandidate {
+                                    channel_id: mapped.id,
+                                    title: mapped.title,
+                                    url: mapped.url,
+                                    verified: mapped.verified,
+                                    subscribers: mapped.subscribers,
+                                    score,
+                                });
+                            }
+                        }
+
+                        candidates.sort_by(|a, b| {
+                            b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal)
+                        });
+                        candidates.truncate(limit);
+                    }
+                }
+
+                let recommended = candidates.first().cloned();
+
+                let out = ResolveChannelOutput {
+                    recommended,
+                    candidates,
+                    resolved_channel_id,
+                };
+                let text = serde_json::to_string(&out)?;
+                Ok(structured_result_with_text(&out, Some(text))?)
+            }
             _ => Err(ConnectorError::ToolNotFound),
         }
     }
@@ -1080,6 +1409,224 @@ fn extract_video_id(input: &str) -> String {
 
     // If not a URL or couldn't extract ID, assume the input is already a video ID
     input.to_string()
+}
+
+fn extract_channel_id_from_str(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.starts_with("UC") && trimmed.len() >= 20 {
+        return Some(trimmed.to_string());
+    }
+
+    if let Ok(url) = Url::parse(trimmed) {
+        if let Some(seg) = url.path_segments() {
+            let segs: Vec<_> = seg.collect();
+            if let Some(idx) = segs.iter().position(|p| *p == "channel") {
+                if let Some(cid) = segs.get(idx + 1) {
+                    if cid.starts_with("UC") {
+                        return Some((*cid).to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_playlist_id_from_str(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.starts_with("PL") || trimmed.starts_with("UU") || trimmed.starts_with("OLAK5") {
+        return Some(trimmed.to_string());
+    }
+    if let Ok(url) = Url::parse(trimmed) {
+        for (k, v) in url.query_pairs() {
+            if k == "list" && !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+async fn resolve_channel_id_best_effort(client: &HttpClient, channel: &str) -> Option<String> {
+    if let Some(cid) = extract_channel_id_from_str(channel) {
+        return Some(cid);
+    }
+
+    let trimmed = channel.trim();
+    let url = if trimmed.starts_with("@") {
+        format!("https://www.youtube.com/{}", trimmed)
+    } else if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://www.youtube.com/{}", trimmed)
+    };
+
+    let html = client.get(url).send().await.ok()?.text().await.ok()?;
+
+    static RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#""channelId"\s*:\s*"(?P<id>UC[a-zA-Z0-9_-]{10,})""#).expect("channelId regex")
+    });
+    RE.captures(&html)
+        .and_then(|c| c.name("id").map(|m| m.as_str().to_string()))
+}
+
+fn feed_url_for_channel(channel_id: &str) -> String {
+    format!(
+        "https://www.youtube.com/feeds/videos.xml?channel_id={}",
+        channel_id
+    )
+}
+
+fn feed_url_for_playlist(playlist_id: &str) -> String {
+    format!(
+        "https://www.youtube.com/feeds/videos.xml?playlist_id={}",
+        playlist_id
+    )
+}
+
+fn parse_youtube_atom_feed(xml: &str) -> Result<Vec<ListedVideo>, ConnectorError> {
+    let mut reader = XmlReader::from_str(xml);
+    reader.trim_text(true);
+
+    let mut buf = Vec::new();
+    let mut in_entry = false;
+    let mut current_tag: Option<String> = None;
+
+    let mut cur_video_id: Option<String> = None;
+    let mut cur_title: Option<String> = None;
+    let mut cur_published: Option<String> = None;
+    let mut cur_author: Option<String> = None;
+
+    let mut out: Vec<ListedVideo> = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(XmlEvent::Start(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                if tag.ends_with("entry") {
+                    in_entry = true;
+                    cur_video_id = None;
+                    cur_title = None;
+                    cur_published = None;
+                    cur_author = None;
+                    current_tag = None;
+                } else if in_entry
+                    && matches!(
+                        tag.as_str(),
+                        "yt:videoId" | "title" | "published" | "updated" | "name"
+                    )
+                {
+                    current_tag = Some(tag);
+                }
+            }
+            Ok(XmlEvent::Text(e)) => {
+                if !in_entry {
+                    buf.clear();
+                    continue;
+                }
+                let Some(tag) = current_tag.as_deref() else {
+                    buf.clear();
+                    continue;
+                };
+                let text = e.unescape().unwrap_or(Cow::Borrowed("")).to_string();
+                match tag {
+                    "yt:videoId" => cur_video_id = Some(text),
+                    "title" => cur_title = Some(text),
+                    "published" => cur_published = Some(text),
+                    "updated" => {
+                        if cur_published.is_none() {
+                            cur_published = Some(text);
+                        }
+                    }
+                    "name" => cur_author = Some(text),
+                    _ => {}
+                }
+            }
+            Ok(XmlEvent::End(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                if tag.ends_with("entry") && in_entry {
+                    in_entry = false;
+                    current_tag = None;
+                    if let (Some(id), Some(title)) = (cur_video_id.take(), cur_title.take()) {
+                        out.push(ListedVideo {
+                            url: format!("https://www.youtube.com/watch?v={}", id),
+                            id,
+                            title,
+                            published_at: cur_published.take(),
+                            channel_title: cur_author.take(),
+                        });
+                    }
+                } else if matches!(
+                    tag.as_str(),
+                    "yt:videoId" | "title" | "published" | "updated" | "name"
+                ) {
+                    current_tag = None;
+                }
+            }
+            Ok(XmlEvent::Eof) => break,
+            Err(e) => {
+                return Err(ConnectorError::Other(format!(
+                    "Failed to parse YouTube feed XML: {}",
+                    e
+                )));
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(out)
+}
+
+fn parse_rfc3339(s: &str) -> Option<DateTime<Utc>> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn normalize_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn string_tokens(s: &str) -> Vec<String> {
+    normalize_ws(&s.to_lowercase())
+        .split_whitespace()
+        .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+fn token_overlap_score(query: &str, title: &str) -> f64 {
+    let q = string_tokens(query);
+    let t = string_tokens(title);
+    if q.is_empty() || t.is_empty() {
+        return 0.0;
+    }
+    let mut overlap = 0usize;
+    for qt in &q {
+        if t.iter().any(|tt| tt == qt) {
+            overlap += 1;
+        }
+    }
+    overlap as f64 / (q.len() as f64)
+}
+
+fn score_channel_candidate(
+    query: &str,
+    title: &str,
+    verified: bool,
+    subscribers: u64,
+    prefer_verified: bool,
+) -> f64 {
+    let overlap = token_overlap_score(query, title);
+    let mut score = overlap * 10.0;
+    if prefer_verified && verified {
+        score += 3.0;
+    }
+    // Subscribers saturate quickly; use log scale.
+    let subs = (subscribers as f64).max(1.0);
+    score += subs.log10().min(8.0);
+    score
 }
 
 fn group_transcript_by_chapters_new(

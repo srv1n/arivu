@@ -70,13 +70,14 @@ impl Connector for TavilySearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Web/news search via Tavily.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Web/news search via Tavily. Use when you want recent sources (topic=news) or broad web discovery (topic=general). Example: query=\"rust async\" topic=\"general\" limit=5.")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
                 "topic": {"type": "string", "enum": ["general","news"], "default":"general"},
                 "depth": {"type": "string", "enum": ["basic","advanced"], "default":"basic", "description": "Search depth"},
-                "max_results": {"type": "integer", "default": 10},
+                "limit": {"type": "integer", "default": 10},
+                "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                 "include_answer": {"type": "boolean", "default": true},
                 "include_images": {"type": "boolean", "default": false},
                 "include_domains": {"type": "array", "items": {"type": "string"}},
@@ -115,7 +116,8 @@ impl Connector for TavilySearchConnector {
             .and_then(|v| v.as_str())
             .unwrap_or("basic");
         let max_results = args
-            .get("max_results")
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
         let include_answer = args
@@ -143,7 +145,12 @@ impl Connector for TavilySearchConnector {
                     .collect::<Vec<_>>()
             });
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set TAVILY_API_KEY or use rzn config set tavily-search {\"api_key\":\"...\"}".into()))?;
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set TAVILY_API_KEY or run `arivu config set tavily-search --value <key>`."
+                    .into(),
+            )
+        })?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 

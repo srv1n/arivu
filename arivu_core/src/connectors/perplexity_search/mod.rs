@@ -102,13 +102,15 @@ impl Connector for PerplexitySearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Grounded web search via Perplexity; use for current info.",
+                "Grounded web search via Perplexity. Use when you need up-to-date facts and \
+sources. Example: query=\"new EU AI Act enforcement dates\" limit=5.",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
-                    "max_results": {"type": "integer", "default": 5},
+                    "limit": {"type": "integer", "default": 5},
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "model": {"type": "string", "description": "Perplexity model (e.g., sonar-pro)"},
                     "language": {"type": "string", "description": "BCP-47 language hint (e.g., en)"},
                     "region": {"type": "string", "description": "Region/country code (e.g., US)"},
@@ -148,8 +150,8 @@ impl Connector for PerplexitySearchConnector {
             )
         })?;
         let limit = args
-            .get("max_results")
-            .or_else(|| args.get("limit"))
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as usize;
         let model = args

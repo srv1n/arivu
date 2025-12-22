@@ -2,31 +2,31 @@ ARIVU MCP - LLM QUICK SHEET (minimal, task-first)
 
 Reddit (connector: "reddit")
 Tasks -> Tools
-- Top posts in a subreddit -> reddit/get_subreddit_top_posts (requires subreddit)
-- Trending/hot posts -> reddit/get_subreddit_hot_posts (requires subreddit)
-- Newest posts -> reddit/get_subreddit_new_posts (requires subreddit)
-- Keyword search -> reddit/search_reddit (requires query)
-- Post + comments -> reddit/get_post_details (requires post_url)
+- Subreddit feed (hot/new/top) -> reddit/list (requires subreddit)
+- Keyword search -> reddit/search (requires query)
+- Post + comments -> reddit/get (requires post_url)
 
 Notes
 - There is no global "top posts" tool; always specify a subreddit.
-- Use search_reddit only for keyword queries, not for "top/hot/new".
+- Use reddit/list for subreddit feeds (hot/new/top), not reddit/search.
 - post_url must be a full Reddit URL, not just a post ID.
 
 Minimal JSON-RPC examples
-1) Top posts
-{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/get_subreddit_top_posts","arguments":{"subreddit":"rust","limit":10}},"id":1}
+1) Subreddit top posts (via list)
+{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/list","arguments":{"subreddit":"rust","sort":"top","time":"week","limit":10}},"id":1}
 
 2) Keyword search
-{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/search_reddit","arguments":{"query":"rust async","subreddit":"programming","limit":5}},"id":2}
+{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/search","arguments":{"query":"rust async","subreddit":"programming","sort":"relevance","time":"all","limit":5}},"id":2}
 
 3) Post + comments
-{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/get_post_details","arguments":{"post_url":"https://www.reddit.com/r/rust/comments/abc123/example_post","comment_limit":25,"comment_sort":"best"}},"id":3}
+{"jsonrpc":"2.0","method":"tools/call","params":{"name":"reddit/get","arguments":{"post_url":"https://www.reddit.com/r/rust/comments/abc123/example_post","comment_limit":25,"comment_sort":"best"}},"id":3}
 
 YouTube (connector: "youtube")
 Tasks -> Tools
-- Video details + transcript -> youtube/get_video_details
-- Search videos/playlists/channels -> youtube/search_videos
+- Video details + transcript -> youtube/get
+- Search videos/playlists/channels -> youtube/search
+- List recent uploads (channel/playlist) -> youtube/list
+- Resolve channel name/handle -> youtube/resolve_channel
 
 X / Twitter (connector: "x")
 Tasks -> Tools
@@ -49,14 +49,13 @@ Tasks -> Tools
 
 arXiv (connector: "arxiv")
 Tasks -> Tools
-- Search papers -> arxiv/search_papers
-- Paper details -> arxiv/get_paper_details
-- Download PDF -> arxiv/get_paper_pdf
+- Search papers -> arxiv/search
+- Paper details -> arxiv/get
 
 PubMed (connector: "pubmed")
 Tasks -> Tools
 - Search -> pubmed/search
-- Abstract -> pubmed/get_abstract
+- Abstract -> pubmed/get
 
 Semantic Scholar (connector: "semantic_scholar")
 Tasks -> Tools
@@ -66,7 +65,7 @@ Tasks -> Tools
 
 SciHub (connector: "scihub")
 Tasks -> Tools
-- Paper by DOI -> scihub/get_paper
+- Paper by DOI -> scihub/get
 
 bioRxiv / medRxiv (connector: "biorxiv")
 Tasks -> Tools

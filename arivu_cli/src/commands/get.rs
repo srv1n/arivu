@@ -1,7 +1,8 @@
 use crate::cli::Cli;
+use crate::commands::tool_mappings::generic_get_tool_and_args;
 use crate::commands::{copy_to_clipboard, CommandError, Result};
 use crate::output::{format_output, format_pretty, OutputData};
-use arivu_core::{CallToolRequestParam, PaginatedRequestParam, ProviderRegistry};
+use arivu_core::{CallToolRequestParam, ProviderRegistry};
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
@@ -22,39 +23,12 @@ pub async fn run(cli: &Cli, connector_name: &str, id: &str) -> Result<()> {
         .ok_or_else(|| CommandError::ConnectorNotFound(connector_name.to_string()))?
         .clone();
 
-    // List available tools to find the get/details tool
     let c = provider.lock().await;
-    let tools_response = c
-        .list_tools(Some(PaginatedRequestParam { cursor: None }))
-        .await?;
-
-    // Find appropriate get tool (varies by connector)
-    let get_tool = tools_response
-        .tools
-        .iter()
-        .find(|tool| {
-            tool.name.contains("get")
-                || tool.name.contains("details")
-                || tool.name.contains("fetch")
-                || tool.name.contains("article")
-                || tool.name.contains("post")
-        })
-        .ok_or_else(|| CommandError::ToolNotFound("get".to_string(), connector_name.to_string()))?;
-
-    // Prepare request based on connector type
-    let arguments = match connector_name {
-        "youtube" => json!({ "video_id": id }),
-        "reddit" => json!({ "post_id": id }),
-        "hackernews" => json!({ "item_id": id }),
-        "wikipedia" => json!({ "title": id }),
-        "arxiv" => json!({ "paper_id": id }),
-        "pubmed" => json!({ "pmid": id }),
-        _ => json!({ "id": id }),
-    };
+    let (tool_name, arguments) = generic_get_tool_and_args(connector_name, id)?;
 
     let request = CallToolRequestParam {
-        name: get_tool.name.clone(),
-        arguments: Some(arguments.as_object().expect("JSON object").clone()),
+        name: tool_name.into(),
+        arguments: Some(arguments),
     };
 
     let response = c.call_tool(request).await?;

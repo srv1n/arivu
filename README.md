@@ -94,6 +94,10 @@ arivu search pubmed "CRISPR gene therapy"
 arivu get hackernews 38500000
 ```
 
+## Downstream Integrations
+
+- Downstream tool API + migration notes: `docs/integrations/DOWNSTREAM_UPGRADE.md`
+
 ## Smart Resolver
 
 Arivu includes a pattern-matching system that automatically detects URLs, IDs, and identifiers and routes them to the appropriate connector.

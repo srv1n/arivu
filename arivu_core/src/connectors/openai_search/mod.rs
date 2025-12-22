@@ -142,13 +142,15 @@ impl Connector for OpenAIWebSearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Grounded web search via OpenAI; use for current info.",
+                "Grounded web search via OpenAI. Use when you need up-to-date facts and \
+sources. Example: query=\"What changed in SEC climate rules in 2025?\" limit=5.",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "User question or query"},
-                    "max_results": {"type": "integer", "description": "Approximate number of sources to cite", "default": 5},
+                    "limit": {"type": "integer", "description": "Approximate number of sources to cite (default 5).", "default": 5},
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "model": {"type": "string", "description": "Model name (e.g., o4-mini, gpt-4.1)"},
                     "max_output_tokens": {"type": "integer", "description": "Max tokens for model output"},
                     "language": {"type": "string", "description": "BCP-47 language hint (e.g., en)"},
@@ -189,8 +191,8 @@ impl Connector for OpenAIWebSearchConnector {
             )
         })?;
         let limit = args
-            .get("max_results")
-            .or_else(|| args.get("limit"))
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as usize;
         let model = args

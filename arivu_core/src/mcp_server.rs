@@ -573,7 +573,7 @@ impl JsonRpcHandler {
                             "requires_auth": "optional"
                         },
                         {
-                            "provider": "semantic_scholar",
+                            "provider": "semantic-scholar",
                             "type": "api_key",
                             "fields": [
                                 {"name": "SEMANTIC_SCHOLAR_API_KEY", "label": "API Key", "kind": "secret", "required": true}

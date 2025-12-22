@@ -904,6 +904,24 @@ impl crate::Connector for AppleRemindersConnector {
             },
         ];
 
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: non-listed tools are still accepted in call_tool().
+        let tools = tools
+            .into_iter()
+            .filter(|t| {
+                matches!(
+                    t.name.as_ref(),
+                    "list_lists"
+                        | "list_reminders"
+                        | "get_reminder"
+                        | "search"
+                        | "create_reminder"
+                        | "update_reminder"
+                        | "complete_reminder"
+                )
+            })
+            .collect();
+
         Ok(ListToolsResult {
             tools,
             next_cursor: None,

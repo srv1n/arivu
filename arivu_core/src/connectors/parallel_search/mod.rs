@@ -309,7 +309,8 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Parallel web search for multiple queries (agent loops).",
+                "Parallel web search (supports multi-query comparisons and agent loops). Tip: \
+use search_queries for A/B comparisons. Example: query=\"compare AWS vs GCP\" search_queries=[\"AWS pros\",\"GCP pros\"].",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
@@ -328,11 +329,12 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
                         "enum": ["one-shot", "agentic"],
                         "description": "one-shot=comprehensive results (default), agentic=token-efficient for agent loops"
                     },
-                    "max_results": {
+                    "limit": {
                         "type": "integer",
                         "default": 10,
                         "description": "Maximum results to return"
                     },
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "after_date": {
                         "type": "string",
                         "description": "Only include content published after this date. Format: YYYY-MM-DD. Example: '2024-01-01'"
@@ -364,7 +366,8 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
             name: Cow::Borrowed("create_monitor"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Create a scheduled web monitor (optional webhook).",
+                "Create a scheduled web monitor (optional webhook). Use when you need ongoing \
+tracking. Example: query=\"OpenAI announcements\" cadence=\"daily\".",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
@@ -419,7 +422,9 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
         let get_monitor_events_tool = Tool {
             name: Cow::Borrowed("get_monitor_events"),
             title: None,
-            description: Some(Cow::Borrowed("Get events from a monitor.")),
+            description: Some(Cow::Borrowed(
+                "Get events from a monitor. Example: monitor_id=\"...\".",
+            )),
             input_schema: Arc::new(
                 json!({
                     "type": "object",
@@ -443,7 +448,9 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
         let cancel_monitor_tool = Tool {
             name: Cow::Borrowed("cancel_monitor"),
             title: None,
-            description: Some(Cow::Borrowed("Cancel an active monitor.")),
+            description: Some(Cow::Borrowed(
+                "Cancel an active monitor. Example: monitor_id=\"...\".",
+            )),
             input_schema: Arc::new(
                 json!({
                     "type": "object",
@@ -511,7 +518,8 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
         };
 
         let max_results = args
-            .get("max_results")
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
 
@@ -646,7 +654,10 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
                 label: "Parallel AI API Key".into(),
                 field_type: FieldType::Secret,
                 required: true,
-                description: Some("Set PARALLEL_API_KEY environment variable or configure via `rzn config set parallel-search`".into()),
+                description: Some(
+                    "Set PARALLEL_API_KEY env var or configure via `arivu config set parallel-search --value <key>`."
+                        .into(),
+                ),
                 options: None,
             }],
         }

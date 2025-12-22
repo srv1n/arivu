@@ -136,7 +136,10 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("get_feed"),
                 title: None,
-                description: Some(Cow::Borrowed("Fetch a feed with metadata + entries.")),
+                description: Some(Cow::Borrowed(
+                    "Fetch a feed (metadata + recent entries). Use when you have a feed URL. \
+Example: url=\"https://www.nasa.gov/rss/dyn/breaking_news.rss\" limit=5.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -163,7 +166,10 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("list_entries"),
                 title: None,
-                description: Some(Cow::Borrowed("List feed entries.")),
+                description: Some(Cow::Borrowed(
+                    "List recent entries from a feed. Use when you don't need full metadata. \
+Example: url=\"https://example.com/feed.xml\" limit=10.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -190,7 +196,10 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("search_feed"),
                 title: None,
-                description: Some(Cow::Borrowed("Search entries by keyword.")),
+                description: Some(Cow::Borrowed(
+                    "Search a feed's entries by keyword. Use when you have a feed URL and \
+want matching items. Example: url=\"https://example.com/feed.xml\" query=\"rust\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -221,7 +230,10 @@ impl Connector for RssConnector {
             Tool {
                 name: Cow::Borrowed("discover_feeds"),
                 title: None,
-                description: Some(Cow::Borrowed("Discover feeds on a webpage.")),
+                description: Some(Cow::Borrowed(
+                    "Discover RSS/Atom feeds linked from a webpage. Use when you have a site \
+URL, not a feed URL. Example: url=\"https://blog.rust-lang.org\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

@@ -116,13 +116,15 @@ impl Connector for AnthropicWebSearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Grounded web search via Anthropic; use for current info.",
+                "Grounded web search via Anthropic. Use when you need up-to-date facts and \
+sources. Example: query=\"latest US inflation print\" limit=5.",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
-                    "max_results": {"type": "integer", "description": "Approximate number of sources", "default": 5},
+                    "limit": {"type": "integer", "description": "Approximate number of sources (default 5).", "default": 5},
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "model": {"type": "string", "description": "Claude model (e.g., claude-3-7-sonnet-latest)"},
                     "max_output_tokens": {"type": "integer"},
                     "language": {"type": "string", "description": "BCP-47 language hint (e.g., en)"},
@@ -163,8 +165,8 @@ impl Connector for AnthropicWebSearchConnector {
             )
         })?;
         let limit = args
-            .get("max_results")
-            .or_else(|| args.get("limit"))
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as usize;
         let model = args

@@ -591,96 +591,23 @@ impl crate::Connector for AppleNotesConnector {
         &self,
         _request: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
+        // Keep the surface small to reduce ambiguity and context bloat for agents.
+        // Back-compat: legacy tools are still accepted in call_tool().
         let tools = vec![
-            // Account & Folder Management
-            Tool {
-                name: Cow::Borrowed("list_accounts"),
-                title: Some("List Notes Accounts".to_string()),
-                description: Some(Cow::Borrowed(
-                    "List all accounts in Notes.app (iCloud, On My Mac, etc.). Use to discover where notes are stored.",
-                )),
-                input_schema: Arc::new(json!({"type": "object", "properties": {}}).as_object().unwrap().clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("list_folders"),
-                title: Some("List Folders".to_string()),
-                description: Some(Cow::Borrowed(
-                    "List folders in Notes.app. Shows folder names, IDs, and note counts. Optionally filter by account.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "account": {
-                                "type": "string",
-                                "description": "Filter to specific account (e.g., 'iCloud'). If omitted, lists all folders."
-                            }
-                        }
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("create_folder"),
-                title: Some("Create Folder".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Create a new folder in Notes.app. Specify account to control where folder is created.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "Name for the new folder. Required."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Account to create folder in (e.g., 'iCloud'). Uses default if omitted."
-                            }
-                        },
-                        "required": ["name"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            // Note Listing & Reading
             Tool {
                 name: Cow::Borrowed("list_notes"),
                 title: Some("List Notes".to_string()),
                 description: Some(Cow::Borrowed(
-                    "List notes with title, dates, and location. Filter by folder and/or account. Returns summaries - use 'get_note' for full content.",
+                    "List note summaries (requires explicit user permission). Use get_note for \
+full content. Example: folder=\"Work\" limit=20.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "folder": {
-                                "type": "string",
-                                "description": "Filter to specific folder name."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Filter to specific account."
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum notes to return. Default: 50, Max: 200.",
-                                "default": 50
-                            }
+                            "folder": { "type": "string", "description": "Optional folder filter." },
+                            "account": { "type": "string", "description": "Optional account filter (e.g., iCloud)." },
+                            "limit": { "type": "integer", "default": 50, "description": "Max notes (default 50, max 200)." }
                         }
                     })
                     .as_object()
@@ -693,23 +620,17 @@ impl crate::Connector for AppleNotesConnector {
             },
             Tool {
                 name: Cow::Borrowed("get_note"),
-                title: Some("Get Note Content".to_string()),
+                title: Some("Get Note".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Retrieve full content of a note by its ID. Returns title, body text, dates, and location. Use note IDs from list_notes or search.",
+                    "Get a note by note_id (requires explicit user permission). Tip: set \
+max_body_length to keep output small. Example: note_id=\"123\" max_body_length=12000.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "note_id": {
-                                "type": "string",
-                                "description": "Note ID obtained from list_notes or search. Required."
-                            },
-                            "max_body_length": {
-                                "type": "integer",
-                                "description": "Maximum characters of note body to return. Default: 50000.",
-                                "default": 50000
-                            }
+                            "note_id": { "type": "string", "description": "Note ID from list_notes/search." },
+                            "max_body_length": { "type": "integer", "default": 50000, "description": "Max characters of body." }
                         },
                         "required": ["note_id"]
                     })
@@ -721,34 +642,21 @@ impl crate::Connector for AppleNotesConnector {
                 annotations: None,
                 icons: None,
             },
-            // Search
             Tool {
                 name: Cow::Borrowed("search"),
                 title: Some("Search Notes".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Search notes by keyword in title or body. Optionally scope to specific folder/account. Returns matching note summaries.",
+                    "Search notes by keyword (requires explicit user permission). Use to find \
+note IDs, then call get_note. Example: query=\"meeting\" limit=10.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search term to find in note title or body. Required."
-                            },
-                            "folder": {
-                                "type": "string",
-                                "description": "Limit search to specific folder."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Limit search to specific account."
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum results. Default: 20.",
-                                "default": 20
-                            }
+                            "query": { "type": "string" },
+                            "folder": { "type": "string" },
+                            "account": { "type": "string" },
+                            "limit": { "type": "integer", "default": 20 }
                         },
                         "required": ["query"]
                     })
@@ -760,33 +668,20 @@ impl crate::Connector for AppleNotesConnector {
                 annotations: None,
                 icons: None,
             },
-            // Note Creation & Editing
             Tool {
                 name: Cow::Borrowed("create_note"),
                 title: Some("Create Note".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Create a new note with title and body. Optionally specify folder and account. Returns the new note's ID.",
+                    "Create a new note (requires explicit user permission). Example: title=\"Todo\" body=\"- item\".",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "title": {
-                                "type": "string",
-                                "description": "Note title (becomes first line/heading). Required."
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Note body text. Use \\n for line breaks. Required."
-                            },
-                            "folder": {
-                                "type": "string",
-                                "description": "Folder to create note in. Uses default folder if omitted."
-                            },
-                            "account": {
-                                "type": "string",
-                                "description": "Account to create note in (e.g., 'iCloud')."
-                            }
+                            "title": { "type": "string" },
+                            "body": { "type": "string" },
+                            "folder": { "type": "string" },
+                            "account": { "type": "string" }
                         },
                         "required": ["title", "body"]
                     })
@@ -802,20 +697,15 @@ impl crate::Connector for AppleNotesConnector {
                 name: Cow::Borrowed("update_note"),
                 title: Some("Update Note".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Replace the entire body of an existing note. Use get_note first to preserve content you want to keep.",
+                    "Replace a note body (requires explicit user permission). Tip: call \
+get_note first if you need to preserve existing content.",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "note_id": {
-                                "type": "string",
-                                "description": "Note ID to update. Required."
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "New body content (replaces entire note body). Required."
-                            }
+                            "note_id": { "type": "string" },
+                            "body": { "type": "string" }
                         },
                         "required": ["note_id", "body"]
                     })
@@ -831,47 +721,16 @@ impl crate::Connector for AppleNotesConnector {
                 name: Cow::Borrowed("append_to_note"),
                 title: Some("Append to Note".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Add text to the end of an existing note. Useful for incremental updates or logging.",
+                    "Append text to a note (requires explicit user permission). Example: note_id=\"123\" text=\"\\n- item\".",
                 )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
                         "properties": {
-                            "note_id": {
-                                "type": "string",
-                                "description": "Note ID to append to. Required."
-                            },
-                            "text": {
-                                "type": "string",
-                                "description": "Text to append. Use \\n for line breaks. Required."
-                            }
+                            "note_id": { "type": "string" },
+                            "text": { "type": "string" }
                         },
                         "required": ["note_id", "text"]
-                    })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                ),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("delete_note"),
-                title: Some("Delete Note".to_string()),
-                description: Some(Cow::Borrowed(
-                    "Delete a note (moves to Recently Deleted). Use with caution.",
-                )),
-                input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "note_id": {
-                                "type": "string",
-                                "description": "Note ID to delete. Required."
-                            }
-                        },
-                        "required": ["note_id"]
                     })
                     .as_object()
                     .unwrap()

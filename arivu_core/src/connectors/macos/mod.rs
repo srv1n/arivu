@@ -252,7 +252,9 @@ impl crate::Connector for MacOsAutomationConnector {
                 name: Cow::Borrowed("run_script"),
                 title: Some("Run AppleScript or JXA".to_string()),
                 description: Some(Cow::Borrowed(
-                    "Execute AppleScript or JXA on macOS. Use when you need to automate apps or system tasks.\nArgs: language ('applescript'|'javascript'|'jxa'), script (string), optional params (any, injected as global $params for JXA), optional max_output_chars (int, truncates stdout/stderr).\nReturns: {language, stdout, stderr, exit_code, truncated_stdout, truncated_stderr}.",
+                    "Execute AppleScript or JXA (requires explicit user permission). Use for \
+macOS automation when a dedicated connector doesn't exist. Example: language=\"applescript\" \
+script=\"tell application \\\"Finder\\\" to get name of startup disk\" max_output_chars=8000.",
                 )),
                 input_schema: Arc::new(
                     json!({
@@ -292,7 +294,10 @@ impl crate::Connector for MacOsAutomationConnector {
             Tool {
                 name: Cow::Borrowed("show_notification"),
                 title: Some("Show Notification".to_string()),
-                description: Some(Cow::Borrowed("Display a macOS user notification. Use for lightweight user alerts. Returns {ok, exit_code}.")),
+                description: Some(Cow::Borrowed(
+                    "Display a macOS notification. Use for lightweight user alerts. Example: \
+message=\"Done\" title=\"arivu\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -318,7 +323,10 @@ impl crate::Connector for MacOsAutomationConnector {
             Tool {
                 name: Cow::Borrowed("reveal_in_finder"),
                 title: Some("Reveal in Finder".to_string()),
-                description: Some(Cow::Borrowed("Reveal a file or folder in Finder and bring Finder to front. Path must be a POSIX path. Returns {ok}.")),
+                description: Some(Cow::Borrowed(
+                    "Reveal a file/folder in Finder and bring Finder to front. Use when the \
+user wants to locate a path visually. Example: path=\"/Users/me/Downloads\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -340,7 +348,10 @@ impl crate::Connector for MacOsAutomationConnector {
             Tool {
                 name: Cow::Borrowed("get_clipboard"),
                 title: Some("Get Clipboard".to_string()),
-                description: Some(Cow::Borrowed("Read the system pasteboard as plain text. Returns {text}.")),
+                description: Some(Cow::Borrowed(
+                    "Read the system clipboard as plain text (may contain sensitive data). \
+Use only when the user asked you to read it.",
+                )),
                 input_schema: Arc::new(json!({"type":"object","properties":{}}).as_object().expect("Schema object").clone()),
                 output_schema: Some(Arc::new(json!({
                     "type": "object",
@@ -353,7 +364,10 @@ impl crate::Connector for MacOsAutomationConnector {
             Tool {
                 name: Cow::Borrowed("set_clipboard"),
                 title: Some("Set Clipboard".to_string()),
-                description: Some(Cow::Borrowed("Write plain text to the system pasteboard. Returns {ok}.")),
+                description: Some(Cow::Borrowed(
+                    "Write plain text to the system clipboard. Use when the user wants to \
+copy output for manual paste.",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -375,7 +389,10 @@ impl crate::Connector for MacOsAutomationConnector {
             Tool {
                 name: Cow::Borrowed("run_shortcut"),
                 title: Some("Run Shortcut".to_string()),
-                description: Some(Cow::Borrowed("Run an Apple Shortcut by name via the 'shortcuts' CLI. Returns {ok, stdout, stderr, exit_code}.")),
+                description: Some(Cow::Borrowed(
+                    "Run an Apple Shortcut by name via the shortcuts CLI (requires explicit \
+user permission). Use when the user has an existing Shortcut workflow. Example: name=\"Daily Brief\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",

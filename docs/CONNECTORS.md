@@ -2,7 +2,7 @@
 
 > A unified interface to 30+ data sources through the Model Context Protocol
 
-**MCP tool names are prefixed with connector name**, e.g. `youtube/search_videos`.
+**MCP tool names are prefixed with connector name**, e.g. `youtube/search`.
 
 ---
 
@@ -29,19 +29,27 @@
 
 | Tool | Description |
 |------|-------------|
-| `get_video_details` | Fetch video metadata, full transcript organized by chapters |
-| `search_videos` | Search videos, playlists, or channels with filters |
+| `get` | Fetch video metadata + transcript (chapters when available) |
+| `search` | Search videos/playlists/channels (use `search_type`) |
+| `list` | List recent uploads from a channel or playlist |
+| `resolve_channel` | Resolve a channel name/handle/url to a stable UC... channel ID |
 
 **Task → Tool (MCP name):**
 | Task | Tool |
 |------|------|
-| Video details + transcript | `youtube/get_video_details` |
-| Search videos/playlists/channels | `youtube/search_videos` |
+| Video details + transcript | `youtube/get` |
+| Search videos/playlists/channels | `youtube/search` |
+| List recent uploads | `youtube/list` |
+| Resolve an "official" channel | `youtube/resolve_channel` |
 
 **Features:**
 - Automatic transcript extraction with chapter grouping
 - Search filters: upload date, sort order, content type
 - No authentication required
+
+Note: `youtube/search` supports `search_type="video"|"playlist"|"channel"` for discovery, but
+`youtube/get` operates on a **single video** (video ID or URL). Use `youtube/list` to bridge from a
+channel/playlist to concrete video IDs/URLs.
 
 **Example:**
 ```bash
@@ -56,22 +64,16 @@ arivu search youtube "rust programming" --limit 10
 
 | Tool | Description |
 |------|-------------|
-| `get_subreddit_top_posts` | Get top posts from any subreddit |
-| `get_subreddit_hot_posts` | Get trending/hot posts |
-| `get_subreddit_new_posts` | Get newest posts |
-| `get_post_details` | Get post with full comment tree |
-| `search_reddit` | Advanced search with filters |
-| `get_user_info` | Get user profile and stats |
-| `get_subreddit_info` | Get subreddit metadata |
+| `list` | Browse a subreddit feed (hot/new/top) |
+| `search` | Keyword search (optionally scoped to a subreddit) |
+| `get` | Post + comments by `post_url` |
 
 **Task → Tool (MCP name):**
 | Task | Tool |
 |------|------|
-| Top posts in a subreddit | `reddit/get_subreddit_top_posts` |
-| Trending/hot posts | `reddit/get_subreddit_hot_posts` |
-| Newest posts | `reddit/get_subreddit_new_posts` |
-| Keyword search | `reddit/search_reddit` |
-| Post + comments | `reddit/get_post_details` |
+| Subreddit feed (hot/new/top) | `reddit/list` |
+| Keyword search | `reddit/search` |
+| Post + comments | `reddit/get` |
 
 **Features:**
 - Works anonymously or with authentication
@@ -151,9 +153,8 @@ arivu config set x --browser chrome
 
 | Tool | Description |
 |------|-------------|
-| `search_papers` | Search arXiv by query |
-| `get_paper_details` | Paper metadata by arXiv ID |
-| `get_paper_pdf` | Paper PDF (base64) |
+| `search` | Search arXiv by query |
+| `get` | Paper metadata by arXiv ID |
 
 **Features:**
 - Field-specific search: `ti:` (title), `au:` (author), `abs:` (abstract)
@@ -163,9 +164,8 @@ arivu config set x --browser chrome
 **Task → Tool (MCP name):**
 | Task | Tool |
 |------|------|
-| Search papers | `arxiv/search_papers` |
-| Paper details | `arxiv/get_paper_details` |
-| Download PDF | `arxiv/get_paper_pdf` |
+| Search papers | `arxiv/search` |
+| Paper details | `arxiv/get` |
 
 **Example:**
 ```bash
@@ -180,7 +180,7 @@ arivu search arxiv "au:hinton AND ti:neural"
 | Tool | Description |
 |------|-------------|
 | `search` | Search PubMed |
-| `get_abstract` | Abstract + metadata by PMID |
+| `get` | Abstract + metadata by PMID |
 
 **Features:**
 - 35+ million citations from MEDLINE and life science journals
@@ -191,7 +191,7 @@ arivu search arxiv "au:hinton AND ti:neural"
 | Task | Tool |
 |------|------|
 | Search articles | `pubmed/search` |
-| Get abstract | `pubmed/get_abstract` |
+| Get abstract | `pubmed/get` |
 
 ---
 

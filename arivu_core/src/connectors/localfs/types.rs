@@ -31,6 +31,10 @@ pub struct TextContent {
     pub format: String, // "plain" or "markdown"
     pub word_count: usize,
     pub char_count: usize,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_char_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +69,10 @@ pub struct SectionContent {
     pub word_count: usize,
     pub prev_section: Option<String>,
     pub next_section: Option<String>,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_char_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

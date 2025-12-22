@@ -95,7 +95,7 @@ $ arivu fetch 12345678
 Ambiguous: Input '12345678' matches multiple patterns:
 
   [1] hackernews → get_post (Hacker News item ID)
-  [2] pubmed → get_article (PubMed ID)
+  [2] pubmed → get (PubMed ID)
 
 Select option [1-2]: 1
 
@@ -114,12 +114,13 @@ To avoid ambiguity, use prefixes:
 
 | Pattern | Example | Tool |
 |---------|---------|------|
-| Watch URL | `https://www.youtube.com/watch?v=dQw4w9WgXcQ` | `get_video_details` |
-| Short URL | `https://youtu.be/dQw4w9WgXcQ` | `get_video_details` |
-| Embed URL | `https://www.youtube.com/embed/dQw4w9WgXcQ` | `get_video_details` |
-| Video ID | `dQw4w9WgXcQ` | `get_video_details` |
-| Playlist URL | `https://www.youtube.com/playlist?list=PLxxx` | `get_playlist` |
-| Channel URL | `https://www.youtube.com/@veritasium` | `get_channel` |
+| Watch URL | `https://www.youtube.com/watch?v=dQw4w9WgXcQ` | `get` |
+| Short URL | `https://youtu.be/dQw4w9WgXcQ` | `get` |
+| Embed URL | `https://www.youtube.com/embed/dQw4w9WgXcQ` | `get` |
+| Video ID | `dQw4w9WgXcQ` | `get` |
+
+Note: playlist/channel URL resolution is not currently implemented in the resolver; use
+`youtube/search` with `search_type="playlist"` or `search_type="channel"`.
 
 ### Hacker News
 
@@ -132,16 +133,16 @@ To avoid ambiguity, use prefixes:
 
 | Pattern | Example | Tool |
 |---------|---------|------|
-| Paper URL | `https://arxiv.org/abs/2301.07041` | `get_paper` |
-| New-style ID | `2301.07041` or `arXiv:2301.07041` | `get_paper` |
-| Old-style ID | `hep-th/9901001` | `get_paper` |
+| Paper URL | `https://arxiv.org/abs/2301.07041` | `get` |
+| New-style ID | `2301.07041` or `arXiv:2301.07041` | `get` |
+| Old-style ID | `hep-th/9901001` | `get` |
 
 ### PubMed
 
 | Pattern | Example | Tool |
 |---------|---------|------|
-| Article URL | `https://pubmed.ncbi.nlm.nih.gov/12345678` | `get_article` |
-| PMID | `12345678` or `PMID:12345678` | `get_article` |
+| Article URL | `https://pubmed.ncbi.nlm.nih.gov/12345678` | `get` |
+| PMID | `12345678` or `PMID:12345678` | `get` |
 
 ### DOI / Semantic Scholar
 
@@ -164,9 +165,9 @@ To avoid ambiguity, use prefixes:
 
 | Pattern | Example | Tool |
 |---------|---------|------|
-| Post URL | `https://www.reddit.com/r/rust/comments/abc123` | `get_post` |
-| Subreddit URL | `https://www.reddit.com/r/rust` | `get_subreddit` |
-| Shorthand | `r/rust` | `get_subreddit` |
+| Post URL | `https://www.reddit.com/r/rust/comments/abc123` | `get` |
+| Subreddit URL | `https://www.reddit.com/r/rust` | `list` |
+| Shorthand | `r/rust` | `list` |
 
 ### X (Twitter)
 
@@ -202,7 +203,7 @@ let resolver = SmartResolver::new();
 // Resolve a single input (returns best match)
 if let Some(action) = resolver.resolve("https://youtube.com/watch?v=dQw4w9WgXcQ") {
     println!("Connector: {}", action.connector);  // "youtube"
-    println!("Tool: {}", action.tool);            // "get_video_details"
+    println!("Tool: {}", action.tool);            // "get"
     println!("Args: {:?}", action.arguments);     // {"video_id": "dQw4w9WgXcQ"}
 }
 ```

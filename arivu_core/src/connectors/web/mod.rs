@@ -556,7 +556,10 @@ impl Connector for WebConnector {
                 Tool {
                     name: Cow::Borrowed("scrape_url"),
                     title: None,
-                    description: Some(Cow::Borrowed("Extract readable text from a URL.")),
+                    description: Some(Cow::Borrowed(
+                        "Extract readable text + basic metadata from a URL. Use when you want \
+the main page content (not structured scraping). Example: url=\"https://example.com\".",
+                    )),
                     annotations: None,
                     input_schema: Arc::new(json!({
                         "type": "object",
@@ -585,7 +588,10 @@ impl Connector for WebConnector {
                 Tool {
                     name: Cow::Borrowed("scrape_with_config"),
                     title: None,
-                    description: Some(Cow::Borrowed("Scrape with custom selectors config.")),
+                    description: Some(Cow::Borrowed(
+                        "Scrape with explicit CSS selectors for structured extraction. Use when \
+you need specific fields (e.g., title/price) and scrape_url is too noisy.",
+                    )),
                     annotations: None,
                     input_schema: Arc::new(json!({
                         "type": "object",

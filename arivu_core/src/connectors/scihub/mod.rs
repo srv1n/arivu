@@ -317,9 +317,12 @@ impl Connector for SciHubConnector {
     ) -> Result<ListToolsResult, ConnectorError> {
         Ok(ListToolsResult {
             tools: vec![Tool {
-                name: Cow::Borrowed("get_paper"),
+                name: Cow::Borrowed("get"),
                 title: None,
-                description: Some(Cow::Borrowed("Paper by DOI from Sci-Hub.")),
+                description: Some(Cow::Borrowed(
+                    "Fetch a paper by DOI via Sci-Hub (may be unlawful; ensure you have rights \
+to access the work). Example: doi=\"10.1038/nature12373\".",
+                )),
                 input_schema: Arc::new(
                     json!({
                         "type": "object",
@@ -350,7 +353,7 @@ impl Connector for SciHubConnector {
         let args = request.arguments.unwrap_or_default();
 
         match request.name.as_ref() {
-            "get_paper" => {
+            "get" | "get_paper" => {
                 let doi = args.get("doi").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'doi' parameter".to_string()),
                 )?;

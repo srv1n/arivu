@@ -6,9 +6,13 @@ pub mod list;
 pub mod pricing;
 pub mod search;
 pub mod setup;
+pub mod tool_mappings;
 pub mod tools;
 pub mod usage;
 pub mod usage_helpers;
+
+#[cfg(test)]
+mod tool_mapping_audit;
 
 use owo_colors::OwoColorize;
 use thiserror::Error;

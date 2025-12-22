@@ -10,19 +10,22 @@
 //!
 //! let resolver = SmartResolver::new();
 //!
-//! // YouTube URL -> get_video_details
+//! // YouTube URL -> get
 //! let action = resolver.resolve("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
 //! assert_eq!(action.connector, "youtube");
-//! assert_eq!(action.tool, "get_video_details");
+//! assert_eq!(action.tool, "get");
 //!
-//! // PubMed ID -> get_article
+//! // PubMed ID -> get
 //! let action = resolver.resolve("PMID:12345678");
 //! assert_eq!(action.connector, "pubmed");
 //!
-//! // ArXiv ID -> get_paper
+//! // ArXiv ID -> get
 //! let action = resolver.resolve("arXiv:2301.07041");
 //! assert_eq!(action.connector, "arxiv");
 //! ```
+//!
+//! Note: the resolver only routes to tools that are implemented and exposed by each connector's
+//! `list_tools()` surface (kept intentionally small for agent use).
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -33,7 +36,7 @@ use std::collections::HashMap;
 pub struct ResolvedAction {
     /// The connector to use (e.g., "youtube", "pubmed")
     pub connector: String,
-    /// The tool to call on the connector (e.g., "get_video_details", "search")
+    /// The tool to call on the connector (e.g., "get", "search")
     pub tool: String,
     /// Arguments to pass to the tool
     pub arguments: HashMap<String, serde_json::Value>,
@@ -245,7 +248,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "youtube_url_watch",
             connector: "youtube",
-            tool: "get_video_details",
+            tool: "get",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?youtube\.com/watch\?v=(?P<video_id>[a-zA-Z0-9_-]{11})").unwrap(),
             captures: &["video_id"],
             arg_mapping: &[("video_id", "video_id")],
@@ -255,7 +258,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "youtube_url_short",
             connector: "youtube",
-            tool: "get_video_details",
+            tool: "get",
             pattern: Regex::new(r"(?:https?://)?youtu\.be/(?P<video_id>[a-zA-Z0-9_-]{11})").unwrap(),
             captures: &["video_id"],
             arg_mapping: &[("video_id", "video_id")],
@@ -265,7 +268,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "youtube_url_embed",
             connector: "youtube",
-            tool: "get_video_details",
+            tool: "get",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?youtube\.com/embed/(?P<video_id>[a-zA-Z0-9_-]{11})").unwrap(),
             captures: &["video_id"],
             arg_mapping: &[("video_id", "video_id")],
@@ -275,32 +278,12 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "youtube_video_id",
             connector: "youtube",
-            tool: "get_video_details",
+            tool: "get",
             pattern: Regex::new(r"^(?P<video_id>[a-zA-Z0-9_-]{11})$").unwrap(),
             captures: &["video_id"],
             arg_mapping: &[("video_id", "video_id")],
             priority: 10, // Low priority - only match bare 11-char strings
             description: "YouTube video ID (11 characters)",
-        },
-        InputPattern {
-            id: "youtube_playlist",
-            connector: "youtube",
-            tool: "get_playlist",
-            pattern: Regex::new(r"(?:https?://)?(?:www\.)?youtube\.com/playlist\?list=(?P<playlist_id>[a-zA-Z0-9_-]+)").unwrap(),
-            captures: &["playlist_id"],
-            arg_mapping: &[("playlist_id", "playlist_id")],
-            priority: 100,
-            description: "YouTube playlist URL",
-        },
-        InputPattern {
-            id: "youtube_channel",
-            connector: "youtube",
-            tool: "get_channel",
-            pattern: Regex::new(r"(?:https?://)?(?:www\.)?youtube\.com/(?:@|channel/)(?P<channel_id>[a-zA-Z0-9_-]+)").unwrap(),
-            captures: &["channel_id"],
-            arg_mapping: &[("channel_id", "channel_id")],
-            priority: 100,
-            description: "YouTube channel URL",
         },
 
         // === Hacker News ===
@@ -329,7 +312,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "arxiv_url",
             connector: "arxiv",
-            tool: "get_paper_details",
+            tool: "get",
             pattern: Regex::new(r"(?:https?://)?arxiv\.org/(?:abs|pdf)/(?P<arxiv_id>\d{4}\.\d{4,5}(?:v\d+)?)").unwrap(),
             captures: &["arxiv_id"],
             arg_mapping: &[("arxiv_id", "paper_id")],
@@ -339,7 +322,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "arxiv_id",
             connector: "arxiv",
-            tool: "get_paper_details",
+            tool: "get",
             pattern: Regex::new(r"^(?:arXiv:|arxiv:)?(?P<arxiv_id>\d{4}\.\d{4,5}(?:v\d+)?)$").unwrap(),
             captures: &["arxiv_id"],
             arg_mapping: &[("arxiv_id", "paper_id")],
@@ -349,7 +332,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "arxiv_old_id",
             connector: "arxiv",
-            tool: "get_paper_details",
+            tool: "get",
             pattern: Regex::new(r"^(?:arXiv:|arxiv:)?(?P<arxiv_id>[a-z-]+/\d{7})$").unwrap(),
             captures: &["arxiv_id"],
             arg_mapping: &[("arxiv_id", "paper_id")],
@@ -361,7 +344,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "pubmed_url",
             connector: "pubmed",
-            tool: "get_abstract",
+            tool: "get",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?(?:ncbi\.nlm\.nih\.gov/pubmed/|pubmed\.ncbi\.nlm\.nih\.gov/)(?P<pmid>\d+)").unwrap(),
             captures: &["pmid"],
             arg_mapping: &[("pmid", "pmid")],
@@ -371,7 +354,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "pubmed_id",
             connector: "pubmed",
-            tool: "get_abstract",
+            tool: "get",
             pattern: Regex::new(r"^(?:PMID:|pmid:|PubMed:)?(?P<pmid>\d{7,8})$").unwrap(),
             captures: &["pmid"],
             arg_mapping: &[("pmid", "pmid")],
@@ -429,12 +412,12 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "github_repo_url",
             connector: "github",
-            tool: "list_issues",
+            tool: "get_repository",
             pattern: Regex::new(r"(?:https?://)?github\.com/(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)/?$").unwrap(),
             captures: &["owner", "repo"],
             arg_mapping: &[("owner", "owner"), ("repo", "repo")],
             priority: 100,
-            description: "GitHub repository URL (lists issues)",
+            description: "GitHub repository URL",
         },
         InputPattern {
             id: "github_issue_url",
@@ -459,44 +442,44 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "github_repo_shorthand",
             connector: "github",
-            tool: "list_issues",
+            tool: "get_repository",
             pattern: Regex::new(r"^(?P<owner>[a-zA-Z0-9_-]+)/(?P<repo>[a-zA-Z0-9_.-]+)$").unwrap(),
             captures: &["owner", "repo"],
             arg_mapping: &[("owner", "owner"), ("repo", "repo")],
             priority: 50,
-            description: "GitHub repository shorthand (lists issues)",
+            description: "GitHub repository shorthand (owner/repo)",
         },
 
         // === Reddit ===
         InputPattern {
             id: "reddit_post_url",
             connector: "reddit",
-            tool: "get_post_details",
-            pattern: Regex::new(r"(?:https?://)?(?:www\.)?reddit\.com/r/(?P<subreddit>[a-zA-Z0-9_]+)/comments/(?P<post_id>[a-z0-9]+)").unwrap(),
-            captures: &["subreddit", "post_id"],
-            arg_mapping: &[("subreddit", "subreddit"), ("post_id", "post_id")],
+            tool: "get",
+            pattern: Regex::new(r"(?P<post_url>(?:https?://)?(?:www\.)?reddit\.com/r/[a-zA-Z0-9_]+/comments/[a-z0-9]+(?:/[^\s?#]+)?)").unwrap(),
+            captures: &["post_url"],
+            arg_mapping: &[("post_url", "post_url")],
             priority: 100,
             description: "Reddit post URL",
         },
         InputPattern {
             id: "reddit_subreddit_url",
             connector: "reddit",
-            tool: "get_subreddit_info",
+            tool: "list",
             pattern: Regex::new(r"(?:https?://)?(?:www\.)?reddit\.com/r/(?P<subreddit>[a-zA-Z0-9_]+)/?$").unwrap(),
             captures: &["subreddit"],
             arg_mapping: &[("subreddit", "subreddit")],
             priority: 100,
-            description: "Reddit subreddit URL",
+            description: "Reddit subreddit URL (lists posts)",
         },
         InputPattern {
             id: "reddit_subreddit_shorthand",
             connector: "reddit",
-            tool: "get_subreddit_info",
+            tool: "list",
             pattern: Regex::new(r"^r/(?P<subreddit>[a-zA-Z0-9_]+)$").unwrap(),
             captures: &["subreddit"],
             arg_mapping: &[("subreddit", "subreddit")],
             priority: 80,
-            description: "Reddit subreddit shorthand (r/name)",
+            description: "Reddit subreddit shorthand (lists posts)",
         },
 
         // === X (Twitter) ===
@@ -615,7 +598,7 @@ fn build_default_patterns() -> Vec<InputPattern> {
         InputPattern {
             id: "spotlight_query_prefix",
             connector: "spotlight",
-            tool: "search_content",
+            tool: "search",
             pattern: Regex::new(r"^(?:spotlight:|mdfind:)(?P<query>.+)$").unwrap(),
             captures: &["query"],
             arg_mapping: &[("query", "query")],
@@ -705,10 +688,6 @@ fn get_pattern_example(pattern_id: &str) -> String {
         "youtube_url_short" => "https://youtu.be/dQw4w9WgXcQ",
         "youtube_url_embed" => "https://www.youtube.com/embed/dQw4w9WgXcQ",
         "youtube_video_id" => "dQw4w9WgXcQ",
-        "youtube_playlist" => {
-            "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
-        }
-        "youtube_channel" => "https://www.youtube.com/@veritasium",
         "hackernews_url" => "https://news.ycombinator.com/item?id=38500000",
         "hackernews_id" => "38500000",
         "arxiv_url" => "https://arxiv.org/abs/2301.07041",
@@ -766,7 +745,7 @@ mod tests {
             .resolve("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
             .unwrap();
         assert_eq!(action.connector, "youtube");
-        assert_eq!(action.tool, "get_video_details");
+        assert_eq!(action.tool, "get");
         assert_eq!(action.arguments.get("video_id").unwrap(), "dQw4w9WgXcQ");
 
         // Short URL
@@ -821,7 +800,7 @@ mod tests {
             .resolve("https://github.com/rust-lang/rust")
             .unwrap();
         assert_eq!(action.connector, "github");
-        assert_eq!(action.tool, "list_issues");
+        assert_eq!(action.tool, "get_repository");
 
         // Shorthand
         let action = resolver.resolve("rust-lang/rust").unwrap();
@@ -852,5 +831,40 @@ mod tests {
         // Random URL should fall back to web
         let action = resolver.resolve("https://example.com/page").unwrap();
         assert_eq!(action.connector, "web");
+    }
+
+    #[test]
+    #[cfg(feature = "all-connectors")]
+    fn resolver_patterns_reference_real_tools() {
+        use crate::build_registry_enabled_only;
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().expect("tokio runtime");
+        rt.block_on(async {
+            let registry = build_registry_enabled_only().await;
+            let resolver = SmartResolver::new();
+
+            for pattern in &resolver.patterns {
+                let Some(provider) = registry.get_provider(pattern.connector) else {
+                    panic!(
+                        "Resolver references missing connector: {}",
+                        pattern.connector
+                    );
+                };
+
+                let c = provider.lock().await;
+                let tools_response = c.list_tools(None).await.expect("list_tools");
+                let exists = tools_response
+                    .tools
+                    .iter()
+                    .any(|t| t.name.as_ref() == pattern.tool);
+
+                assert!(
+                    exists,
+                    "Resolver pattern '{}' references missing tool '{}' on connector '{}'",
+                    pattern.id, pattern.tool, pattern.connector
+                );
+            }
+        });
     }
 }

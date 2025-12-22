@@ -81,11 +81,12 @@ impl Connector for SerperSearchConnector {
         &self,
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
-        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Google SERP via Serper.")), input_schema: Arc::new(json!({
+        let tool = Tool { name: Cow::Borrowed("search"), title: None, description: Some(Cow::Borrowed("Google SERP via Serper. Use when you want Google-like results. Example: query=\"site:rust-lang.org borrow checker\" limit=5.")), input_schema: Arc::new(json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
-                "max_results": {"type": "integer", "default": 10},
+                "limit": {"type": "integer", "default": 10},
+                "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                 "date_preset": {"type": "string", "description": "last_24_hours|last_7_days|last_30_days|this_month|past_year"},
                 "locale": {"type": "string", "description": "Locale like en-US or fr-FR"},
                 "language": {"type": "string", "description": "BCP-47 language (hl)"},
@@ -114,7 +115,8 @@ impl Connector for SerperSearchConnector {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ConnectorError::InvalidParams("Missing 'query'".into()))?;
         let num = args
-            .get("max_results")
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .or_else(|| args.get("num"))
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
@@ -124,7 +126,12 @@ impl Connector for SerperSearchConnector {
             .map(|s| s == "detailed")
             .unwrap_or(false);
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set SERPER_API_KEY or use rzn config set serper-search {\"api_key\":\"...\"}".into()))?;
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set SERPER_API_KEY or run `arivu config set serper-search --value <key>`."
+                    .into(),
+            )
+        })?;
         let mut headers = HeaderMap::new();
         headers.insert(
             "X-API-KEY",

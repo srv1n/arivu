@@ -758,7 +758,10 @@ impl Connector for PubMedConnector {
                 Tool {
                     name: Cow::Borrowed("search"),
                     title: None,
-                    description: Some(Cow::Borrowed("Search PubMed articles by query.")),
+                    description: Some(Cow::Borrowed(
+                        "Search PubMed by query. Use when you want PMIDs to pass into \
+get. Tip: keep limit small for concise output. Example: query=\"CRISPR AND off-target\".",
+                    )),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {
@@ -796,9 +799,12 @@ impl Connector for PubMedConnector {
                     icons: None,
                 },
                 Tool {
-                    name: Cow::Borrowed("get_abstract"),
+                    name: Cow::Borrowed("get"),
                     title: None,
-                    description: Some(Cow::Borrowed("Abstract + metadata by PMID.")),
+                    description: Some(Cow::Borrowed(
+                        "Get abstract + metadata by PMID. Use response_format='concise' if you \
+only need title+abstract_text. Example: pmid=\"34762503\".",
+                    )),
                     input_schema: Arc::new(json!({
                         "type": "object",
                         "properties": {
@@ -891,7 +897,7 @@ impl Connector for PubMedConnector {
                     Ok(structured_result_with_text(&result, Some(text))?)
                 }
             }
-            "get_abstract" => {
+            "get" | "get_abstract" => {
                 let pmid = args.get("pmid").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams(
                         "Missing 'pmid' parameter. Expected a PubMed ID (e.g., '34762503')"

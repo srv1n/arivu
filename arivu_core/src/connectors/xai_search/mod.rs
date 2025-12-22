@@ -103,7 +103,8 @@ impl Connector for XaiSearchConnector {
             name: Cow::Borrowed("search"),
             title: None,
             description: Some(Cow::Borrowed(
-                "Live search via xAI (web and/or X).",
+                "Live search via xAI (web and/or X). Use when you need up-to-date info. \
+Example: query=\"today's Bitcoin price\" sources=[\"web\"] limit=5.",
             )),
             input_schema: Arc::new(json!({
                 "type": "object",
@@ -116,7 +117,8 @@ impl Connector for XaiSearchConnector {
                         "default": ["web"]
                     },
                     "mode": {"type": "string", "enum": ["auto", "on", "off"], "default": "auto", "description": "Search mode"},
-                    "max_results": {"type": "integer", "default": 5, "description": "Approximate citations to include"},
+                    "limit": {"type": "integer", "default": 5, "description": "Approximate citations to include (default 5)."},
+                    "max_results": {"type": "integer", "description": "Alias for limit (deprecated)."},
                     "model": {"type": "string", "description": "xAI model (e.g., grok-4-fast)"},
                     "language": {"type": "string", "description": "BCP-47 language hint (e.g., en)"},
                     "region": {"type": "string", "description": "Region/country code (e.g., US)"},
@@ -164,8 +166,8 @@ impl Connector for XaiSearchConnector {
             .unwrap_or_else(|| vec!["web".to_string()]);
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("auto");
         let limit = args
-            .get("max_results")
-            .or_else(|| args.get("limit"))
+            .get("limit")
+            .or_else(|| args.get("max_results"))
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as usize;
         let model = args
@@ -178,7 +180,12 @@ impl Connector for XaiSearchConnector {
             .map(|s| s == "detailed")
             .unwrap_or(false);
 
-        let key = self.api_key.as_ref().ok_or_else(|| ConnectorError::InvalidInput("Missing credentials: set XAI_API_KEY or use rzn config set xai-search {\"api_key\":\"...\"}".into()))?;
+        let key = self.api_key.as_ref().ok_or_else(|| {
+            ConnectorError::InvalidInput(
+                "Missing credentials: set XAI_API_KEY or run `arivu config set xai-search --value <key>`."
+                    .into(),
+            )
+        })?;
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,

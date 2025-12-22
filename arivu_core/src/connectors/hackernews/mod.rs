@@ -942,7 +942,10 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("search_stories"),
                 title: None,
-                description: Some(Cow::Borrowed("Keyword search of HN via Algolia.")),
+                description: Some(Cow::Borrowed(
+                    "Search Hacker News via Algolia (relevance-ranked). Use when you have keywords. \
+Example: query=\"rust\" hitsPerPage=10.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -967,7 +970,10 @@ impl Connector for HackerNewsConnector {
             Tool {
                 name: Cow::Borrowed("search_by_date"),
                 title: None,
-                description: Some(Cow::Borrowed("Recent HN search (chronological).")),
+                description: Some(Cow::Borrowed(
+                    "Search recent Hacker News items (chronological). Use when recency matters \
+more than relevance.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {

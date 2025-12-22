@@ -205,6 +205,14 @@ struct ListFilesInput {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct ListUsersInput {
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct GetThreadByPermalinkInput {
     permalink: String,
     #[serde(default)]
@@ -314,7 +322,8 @@ impl Connector for SlackConnector {
                 website_url: None,
             },
             instructions: Some(
-                "Provide a Slack token via rzn config set slack token=<xoxb-...>".to_string(),
+                "Provide a Slack token via `arivu config set slack --value <xoxb-...>`."
+                    .to_string(),
             ),
         })
     }
@@ -454,6 +463,21 @@ impl Connector for SlackConnector {
                         "limit": {"type":"integer","minimum":1,"maximum":200}
                     },
                     "required":["permalink"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("list_users"),
+                title: None,
+                description: Some(Cow::Borrowed("List workspace users the token can see.")),
+                input_schema: Arc::new(json!({
+                    "type":"object",
+                    "properties":{
+                        "cursor": {"type":"string"},
+                        "limit": {"type":"integer","minimum":1,"maximum":200}
+                    }
                 }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
@@ -615,6 +639,23 @@ impl Connector for SlackConnector {
                 let out = json!({
                     "messages": v.get("messages").cloned().unwrap_or(json!([])),
                     "has_more": v.get("has_more").cloned().unwrap_or(json!(false)),
+                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                });
+                structured_result_with_text(&out, None)
+            }
+            "list_users" => {
+                let input: ListUsersInput = serde_json::from_value(Value::Object(args_map))
+                    .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
+                let mut params: Vec<(&str, String)> = vec![];
+                if let Some(c) = input.cursor {
+                    params.push(("cursor", c));
+                }
+                if let Some(l) = input.limit {
+                    params.push(("limit", l.to_string()));
+                }
+                let v = self.api_get("users.list", &params).await?;
+                let out = json!({
+                    "members": v.get("members").cloned().unwrap_or(json!([])),
                     "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)

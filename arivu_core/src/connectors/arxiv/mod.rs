@@ -3,10 +3,9 @@ use crate::error::ConnectorError;
 use crate::utils::structured_result_with_text;
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
-use base64::Engine;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 use rmcp::model::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -52,8 +51,8 @@ pub enum ResponseFormat {
 #[derive(Debug, Deserialize)]
 struct SearchPapersArgs {
     query: String,
-    #[serde(default = "default_max_results")]
-    max_results: i32,
+    #[serde(default = "default_limit", alias = "max_results")]
+    limit: i32,
     #[serde(default = "default_start")]
     start: i32,
     #[serde(default = "default_sort_by")]
@@ -73,6 +72,10 @@ struct GetPaperDetailsArgs {
 
 fn default_max_results() -> i32 {
     10
+}
+
+fn default_limit() -> i32 {
+    default_max_results()
 }
 
 fn default_start() -> i32 {
@@ -109,7 +112,7 @@ impl ArxivConnector {
         url.query_pairs_mut()
             .append_pair("search_query", &args.query)
             .append_pair("start", &args.start.to_string())
-            .append_pair("max_results", &args.max_results.to_string())
+            .append_pair("max_results", &args.limit.to_string())
             .append_pair("sortBy", &args.sort_by)
             .append_pair("sortOrder", &args.sort_order);
 
@@ -164,34 +167,8 @@ impl ArxivConnector {
         Ok(papers[0].clone())
     }
 
-    // Helper method to download PDF content
-    async fn download_pdf(&self, paper_id: &str) -> Result<Vec<u8>, ConnectorError> {
-        let url = format!("https://arxiv.org/pdf/{}.pdf", paper_id);
-
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(ConnectorError::HttpRequest)?;
-
-        if response.status() == StatusCode::NOT_FOUND {
-            return Err(ConnectorError::ResourceNotFound);
-        }
-
-        if !response.status().is_success() {
-            return Err(ConnectorError::Other(format!(
-                "Failed to download PDF: {}",
-                response.status()
-            )));
-        }
-
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(ConnectorError::HttpRequest)?;
-
-        Ok(bytes.to_vec())
+    fn pdf_url(paper_id: &str) -> String {
+        format!("https://arxiv.org/pdf/{}.pdf", paper_id)
     }
 
     // Helper method to parse arXiv API response
@@ -384,6 +361,14 @@ impl ArxivConnector {
         result.insert("id".to_string(), json!(paper.id));
         result.insert("title".to_string(), json!(paper.title));
         result.insert("summary".to_string(), json!(paper.summary));
+        result.insert(
+            "abstract_url".to_string(),
+            json!(format!("https://arxiv.org/abs/{}", paper.id)),
+        );
+        result.insert(
+            "pdf_url".to_string(),
+            json!(format!("https://arxiv.org/pdf/{}.pdf", paper.id)),
+        );
         result
     }
 }
@@ -418,7 +403,7 @@ impl Connector for ArxivConnector {
         // Test the API by making a simple search request
         let args = SearchPapersArgs {
             query: "cat:cs.AI".to_string(),
-            max_results: 1,
+            limit: 1,
             start: 0,
             sort_by: "relevance".to_string(),
             sort_order: "descending".to_string(),
@@ -516,9 +501,11 @@ impl Connector for ArxivConnector {
     ) -> Result<ListToolsResult, ConnectorError> {
         let tools = vec![
             Tool {
-                name: Cow::Borrowed("search_papers"),
+                name: Cow::Borrowed("search"),
                 title: None,
-                description: Some(Cow::Borrowed("Search arXiv papers by query.")),
+                description: Some(Cow::Borrowed(
+                    "Search arXiv papers. Tip: use fielded queries like \"ti:transformer AND au:hinton\"; then pass a result id into get.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -526,9 +513,13 @@ impl Connector for ArxivConnector {
                             "type": "string",
                             "description": "The search query. Can include field-specific searches like 'ti:neural AND au:hinton'."
                         },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return (default: 10). Keep this small for concise output."
+                        },
                         "max_results": {
                             "type": "integer",
-                            "description": "Maximum number of results to return (default: 10)"
+                            "description": "Deprecated alias for limit."
                         },
                         "start": {
                             "type": "integer",
@@ -557,9 +548,11 @@ impl Connector for ArxivConnector {
 
             },
             Tool {
-                name: Cow::Borrowed("get_paper_details"),
+                name: Cow::Borrowed("get"),
                 title: None,
-                description: Some(Cow::Borrowed("Paper metadata by arXiv ID.")),
+                description: Some(Cow::Borrowed(
+                    "Get paper metadata by arXiv ID (e.g., 2301.07041). Tip: use response_format='concise' for id/title/summary + urls.",
+                )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
@@ -572,24 +565,6 @@ impl Connector for ArxivConnector {
                             "enum": ["concise", "detailed"],
                             "description": "Response verbosity: 'concise' (default) returns only id/title/summary, 'detailed' includes all metadata",
                             "default": "concise"
-                        }
-                    },
-                    "required": ["paper_id"]
-                }).as_object().expect("Schema object").clone()),
-                output_schema: None,
-                annotations: None,
-                icons: None,
-            },
-            Tool {
-                name: Cow::Borrowed("get_paper_pdf"),
-                title: None,
-                description: Some(Cow::Borrowed("Paper PDF as base64 by arXiv ID.")),
-                input_schema: Arc::new(json!({
-                    "type": "object",
-                    "properties": {
-                        "paper_id": {
-                            "type": "string",
-                            "description": "The arXiv ID of the paper (e.g., '2101.12345')"
                         }
                     },
                     "required": ["paper_id"]
@@ -611,7 +586,7 @@ impl Connector for ArxivConnector {
         request: CallToolRequestParam,
     ) -> Result<CallToolResult, ConnectorError> {
         match request.name.as_ref() {
-            "search_papers" => {
+            "search" | "search_papers" => {
                 let args: SearchPapersArgs = serde_json::from_value(
                     serde_json::to_value(request.arguments.unwrap_or_default())
                         .map_err(ConnectorError::SerdeJson)?,
@@ -636,7 +611,7 @@ impl Connector for ArxivConnector {
                     json!({
                         "query": args.query,
                         "start": args.start,
-                        "max_results": args.max_results,
+                        "limit": args.limit,
                         "sort_by": args.sort_by,
                         "sort_order": args.sort_order,
                         "results": results,
@@ -645,7 +620,7 @@ impl Connector for ArxivConnector {
                 let text = serde_json::to_string(&data).map_err(ConnectorError::SerdeJson)?;
                 Ok(structured_result_with_text(&data, Some(text))?)
             }
-            "get_paper_details" => {
+            "get" | "get_paper_details" => {
                 let args: GetPaperDetailsArgs = serde_json::from_value(
                     serde_json::to_value(request.arguments.unwrap_or_default())
                         .map_err(ConnectorError::SerdeJson)?,
@@ -675,39 +650,19 @@ impl Connector for ArxivConnector {
                     Err(err) => Err(err),
                 }
             }
-            "get_paper_pdf" => {
+            "get_pdf_url" | "get_paper_pdf" => {
                 let args: GetPaperDetailsArgs = serde_json::from_value(
                     serde_json::to_value(request.arguments.unwrap_or_default())
                         .map_err(ConnectorError::SerdeJson)?,
                 )
                 .map_err(|e| ConnectorError::InvalidParams(format!("Invalid arguments: {}", e)))?;
 
-                match self.download_pdf(&args.paper_id).await {
-                    Ok(pdf_data) => {
-                        let base64_data =
-                            base64::engine::general_purpose::STANDARD.encode(&pdf_data);
-
-                        let data = json!({
-                            "paper_id": args.paper_id,
-                            "content_type": "application/pdf",
-                            "data": base64_data
-                        });
-                        let text =
-                            serde_json::to_string(&data).map_err(ConnectorError::SerdeJson)?;
-                        Ok(structured_result_with_text(&data, Some(text))?)
-                    }
-                    Err(ConnectorError::ResourceNotFound) => {
-                        let data = json!({
-                            "paper_id": args.paper_id,
-                            "content_type": "application/pdf",
-                            "data": serde_json::Value::Null,
-                        });
-                        let text =
-                            serde_json::to_string(&data).map_err(ConnectorError::SerdeJson)?;
-                        Ok(structured_result_with_text(&data, Some(text))?)
-                    }
-                    Err(err) => Err(err),
-                }
+                let data = json!({
+                    "paper_id": args.paper_id,
+                    "pdf_url": Self::pdf_url(&args.paper_id),
+                });
+                let text = serde_json::to_string(&data).map_err(ConnectorError::SerdeJson)?;
+                Ok(structured_result_with_text(&data, Some(text))?)
             }
             _ => Err(ConnectorError::ToolNotFound),
         }

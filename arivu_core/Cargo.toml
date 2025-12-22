@@ -1,6 +1,6 @@
 [package]
 name = "arivu_core"
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 description = "Core library for Arivu - unified data source connectors"
 license = "MIT OR Apache-2.0"
@@ -95,7 +95,7 @@ biorxiv = []
 rss = ["dep:feed-rs", "dep:scraper"]
 discord = ["dep:serenity"]
 google-scholar = ["dep:scraper"]
-youtube = ["dep:yt-transcript-rs", "dep:rusty_ytdl"]
+youtube = ["dep:yt-transcript-rs", "dep:rusty_ytdl", "dep:quick-xml"]
 reddit = ["dep:roux"]
 hackernews = []
 wikipedia = ["dep:wikipedia"]
@@ -147,7 +147,7 @@ google-calendar = ["dep:google-calendar3", "dep:yup-oauth2", "dep:hyper", "dep:h
 google-people = ["dep:google-people1", "dep:yup-oauth2", "dep:hyper", "dep:hyper-rustls"]
 
 # Local filesystem connector
-localfs = ["dep:lopdf", "dep:zip", "dep:quick-xml", "dep:scraper"]
+localfs = ["dep:lopdf", "dep:zip", "dep:quick-xml", "dep:scraper", "dep:htmd"]
 
 # Browser cookie extraction
 browser-cookies = ["dep:rookie", "dep:publicsuffix"]

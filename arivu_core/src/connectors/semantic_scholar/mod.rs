@@ -109,6 +109,15 @@ struct GetRelatedPapersArgs {
     limit: i32,
 }
 
+#[derive(Debug, Deserialize)]
+struct GetPaperEdgesArgs {
+    paper_id: String,
+    #[serde(default = "default_page_size")]
+    limit: i32,
+    #[serde(default)]
+    offset: Option<i32>,
+}
+
 fn default_page_size() -> i32 {
     10
 }
@@ -288,6 +297,40 @@ impl SemanticScholarConnector {
         Ok(recommendations)
     }
 
+    async fn get_paper_edges(
+        &self,
+        paper_id: &str,
+        edge: &str,
+        limit: i32,
+        offset: i32,
+    ) -> Result<Value, ConnectorError> {
+        let url = format!(
+            "https://api.semanticscholar.org/graph/v1/paper/{}/{}?fields=paperId,title,abstract,url,venue,year,publicationDate,publicationTypes,authors,citationCount,influentialCitationCount,openAccessPdf,fieldsOfStudy,externalIds&limit={}&offset={}",
+            paper_id, edge, limit, offset
+        );
+
+        let mut request = self.client.get(&url);
+        if let Some(api_key) = &self.api_key {
+            request = request.header("x-api-key", api_key);
+        }
+
+        let response = request.send().await.map_err(ConnectorError::HttpRequest)?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(ConnectorError::ResourceNotFound);
+        }
+        if !response.status().is_success() {
+            return Err(ConnectorError::Other(format!(
+                "Semantic Scholar API returned error status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<Value>()
+            .await
+            .map_err(|e| ConnectorError::Other(format!("Failed to parse JSON response: {}", e)))
+    }
+
     fn format_paper(&self, paper: &Paper) -> HashMap<String, Value> {
         let mut result = HashMap::new();
 
@@ -364,16 +407,16 @@ impl SemanticScholarConnector {
 #[async_trait]
 impl Connector for SemanticScholarConnector {
     fn name(&self) -> &'static str {
-        "semantic_scholar"
+        "semantic-scholar"
     }
 
     fn description(&self) -> &'static str {
-        "A connector for searching academic papers on Semantic Scholar."
+        "Semantic Scholar papers: search, details, citations, references."
     }
 
     async fn capabilities(&self) -> ServerCapabilities {
         ServerCapabilities {
-            tools: None,
+            tools: Some(Default::default()),
             ..Default::default()
         }
     }
@@ -440,7 +483,10 @@ impl Connector for SemanticScholarConnector {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("MCP connector for various data sources".to_string()),
+            instructions: Some(
+                "Use `search_papers` to find paper IDs, then `get_paper_details`/`get_citations`/`get_references`. Optional: set an API key via `arivu config set semantic-scholar --value <key>` for higher rate limits."
+                    .to_string(),
+            ),
         })
     }
 
@@ -580,6 +626,44 @@ impl Connector for SemanticScholarConnector {
                 annotations: None,
                 icons: None,
             },
+            Tool {
+                name: Cow::Borrowed("get_citations"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "Citations for a paper (papers that cite this paper).",
+                )),
+                input_schema: Arc::new(json!({
+                    "type": "object",
+                    "properties": {
+                        "paper_id": { "type": "string", "description": "Paper ID" },
+                        "limit": { "type": "integer", "description": "Max results (default: 10)" },
+                        "offset": { "type": "integer", "description": "Offset for pagination (default: 0)" }
+                    },
+                    "required": ["paper_id"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
+            Tool {
+                name: Cow::Borrowed("get_references"),
+                title: None,
+                description: Some(Cow::Borrowed(
+                    "References for a paper (papers this paper cites).",
+                )),
+                input_schema: Arc::new(json!({
+                    "type": "object",
+                    "properties": {
+                        "paper_id": { "type": "string", "description": "Paper ID" },
+                        "limit": { "type": "integer", "description": "Max results (default: 10)" },
+                        "offset": { "type": "integer", "description": "Offset for pagination (default: 0)" }
+                    },
+                    "required": ["paper_id"]
+                }).as_object().expect("Schema object").clone()),
+                output_schema: None,
+                annotations: None,
+                icons: None,
+            },
         ];
 
         Ok(ListToolsResult {
@@ -664,6 +748,26 @@ impl Connector for SemanticScholarConnector {
                     }
                     Err(err) => Err(err),
                 }
+            }
+            "get_citations" => {
+                let args: GetPaperEdgesArgs = serde_json::from_value(json!(args)).map_err(|e| {
+                    ConnectorError::InvalidParams(format!("Invalid arguments: {}", e))
+                })?;
+                let offset = args.offset.unwrap_or(0);
+                let payload = self
+                    .get_paper_edges(&args.paper_id, "citations", args.limit, offset)
+                    .await?;
+                Ok(structured_result_with_text(&payload, None)?)
+            }
+            "get_references" => {
+                let args: GetPaperEdgesArgs = serde_json::from_value(json!(args)).map_err(|e| {
+                    ConnectorError::InvalidParams(format!("Invalid arguments: {}", e))
+                })?;
+                let offset = args.offset.unwrap_or(0);
+                let payload = self
+                    .get_paper_edges(&args.paper_id, "references", args.limit, offset)
+                    .await?;
+                Ok(structured_result_with_text(&payload, None)?)
             }
             _ => Err(ConnectorError::ToolNotFound),
         }

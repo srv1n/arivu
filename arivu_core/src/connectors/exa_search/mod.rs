@@ -54,7 +54,11 @@ impl ExaSearchConnector {
 
         let mut body = json!({
             "query": query,
-            "numResults": args.get("num_results").and_then(|v| v.as_u64()).unwrap_or(10),
+            "numResults": args
+                .get("limit")
+                .or_else(|| args.get("num_results"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10),
         });
 
         // Search type (neural, auto, fast, deep)
@@ -280,7 +284,11 @@ impl ExaSearchConnector {
 
         let mut body = json!({
             "url": url,
-            "numResults": args.get("num_results").and_then(|v| v.as_u64()).unwrap_or(10),
+            "numResults": args
+                .get("limit")
+                .or_else(|| args.get("num_results"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10),
         });
 
         // Category filter
@@ -375,7 +383,11 @@ impl ExaSearchConnector {
         }
 
         // Number of search results to use
-        if let Some(num_results) = args.get("num_results").and_then(|v| v.as_u64()) {
+        if let Some(num_results) = args
+            .get("limit")
+            .or_else(|| args.get("num_results"))
+            .and_then(|v| v.as_u64())
+        {
             body["numResults"] = json!(num_results);
         }
 
@@ -651,6 +663,10 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
                         "maximum": 100,
                         "description": "Number of results (max 100)"
                     },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Alias for num_results (preferred name across search providers)."
+                    },
                     "type": {
                         "type": "string",
                         "enum": ["neural", "auto", "fast", "deep"],
@@ -792,6 +808,10 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
                         "maximum": 100,
                         "description": "Number of similar results to return"
                     },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Alias for num_results (preferred name across search providers)."
+                    },
                     "category": {
                         "type": "string",
                         "enum": ["people", "company", "research paper", "news", "pdf", "github", "tweet", "linkedin profile", "financial report", "personal site"],
@@ -844,6 +864,10 @@ DECISION RULE: If you need a specific entity type (people, companies, papers, tw
                     "num_results": {
                         "type": "integer",
                         "description": "Number of search results to use for generating the answer"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Alias for num_results (preferred name across search providers)."
                     },
                     "category": {
                         "type": "string",

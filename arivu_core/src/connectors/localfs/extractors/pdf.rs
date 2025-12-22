@@ -158,6 +158,8 @@ impl Extractor for PdfExtractor {
             format: "plain".to_string(),
             word_count,
             char_count,
+            truncated: false,
+            original_char_count: None,
         })
     }
 
@@ -282,6 +284,8 @@ impl Extractor for PdfExtractor {
             word_count,
             prev_section: prev,
             next_section: next,
+            truncated: false,
+            original_char_count: None,
         })
     }
 
