@@ -105,6 +105,32 @@ Recommended calls:
 {"method":"tools/call","params":{"name":"youtube/resolve_channel","arguments":{"query":"Andrew Huberman","limit":5,"prefer_verified":true}}}
 ```
 
+Common workflows
+
+**A) “Last 5 videos from Andrew Huberman’s official channel”**
+
+1) Resolve a stable channel ID (UC…):
+
+```json
+{"method":"tools/call","params":{"name":"youtube/resolve_channel","arguments":{"query":"Andrew Huberman","limit":5,"prefer_verified":true}}}
+```
+
+2) Take `recommended.channel_id` (or ask the user to pick from `candidates`) and list uploads:
+
+```json
+{"method":"tools/call","params":{"name":"youtube/list","arguments":{"source":"channel","channel":"UC...","limit":5}}}
+```
+
+3) For each returned video ID, call `youtube/get` and summarize from `transcript`/`chapters`.
+
+**B) “Last 5 videos from the last week (official channel)”**
+
+Same as (A), but add a time filter:
+
+```json
+{"method":"tools/call","params":{"name":"youtube/list","arguments":{"source":"channel","channel":"UC...","limit":5,"published_within_days":7}}}
+```
+
 Suggested next interfaces (not implemented yet)
 
 If you need more than “search + get video”, the common YouTube primitives downstream teams usually
@@ -120,6 +146,14 @@ Current implementation notes
   - `source="playlist"` with `playlist=playlist_url|playlist_id`
   - optional time filters: `published_within_days` or `published_after` (RFC3339)
 - `youtube/resolve_channel` ranks candidates using token overlap + (optional) verified preference + subscriber count.
+
+Important: “official channel” is a best-effort heuristic
+
+`youtube/resolve_channel` helps reduce ambiguity, but it is not an authoritative verification API.
+Downstream hosts should:
+
+- Present `candidates[]` to the user in interactive contexts.
+- Prefer a pinned UC… channel ID in configuration once chosen.
 
 ### arXiv (connector: `arxiv`)
 

@@ -142,7 +142,7 @@ $ arivu fetch 12345678
 Ambiguous: Input '12345678' matches multiple patterns:
 
   [1] hackernews → get_post (Hacker News item ID)
-  [2] pubmed → get_abstract (PubMed ID)
+  [2] pubmed → get (PubMed ID)
 
 Select option [1-2]:
 ```
@@ -178,8 +178,11 @@ The install script automatically downloads the correct binary for your platform:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/srv1n/arivu/main/packaging/scripts/install.sh | bash
+```
 
-# Uninstall
+Uninstall:
+
+```bash
 rm -f ~/.local/bin/arivu
 rm -rf ~/.config/arivu
 ```
@@ -189,8 +192,11 @@ rm -rf ~/.config/arivu
 ```bash
 brew tap srv1n/tap
 brew install arivu
+```
 
-# Uninstall
+Uninstall:
+
+```bash
 brew uninstall arivu
 brew untap srv1n/tap
 ```
