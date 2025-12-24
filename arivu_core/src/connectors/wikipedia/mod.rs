@@ -1,6 +1,6 @@
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated, structured_result_with_text, Page};
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
 use reqwest::Client;
@@ -60,6 +60,10 @@ pub struct WikipediaConnector {
     search_limit: u32,
 }
 
+const MAX_SEARCH_LIMIT: u32 = 5_000;
+const MAX_SEARCH_REQUESTS: usize = 100;
+const MAX_SR_LIMIT_PER_REQUEST: u32 = 50;
+
 impl WikipediaConnector {
     pub async fn new(auth: AuthDetails) -> Result<Self, ConnectorError> {
         let client = Client::builder()
@@ -110,41 +114,50 @@ impl WikipediaConnector {
         query: &str,
         limit: u32,
     ) -> Result<Vec<String>, ConnectorError> {
-        let params = [
-            ("list", "search"),
-            ("srprop", ""),
-            ("srlimit", &limit.to_string()),
-            ("srsearch", query),
-            ("format", "json"),
-            ("action", "query"),
-        ];
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
 
-        let response = self
-            .client
-            .get(self.base_url())
-            .query(&params)
-            .send()
-            .await
-            .map_err(ConnectorError::HttpRequest)?;
+        let desired_limit = limit.min(MAX_SEARCH_LIMIT) as usize;
 
-        let data: Value = response.json().await.map_err(ConnectorError::HttpRequest)?;
+        collect_paginated(
+            desired_limit,
+            MAX_SEARCH_REQUESTS,
+            None::<u32>,
+            |cursor, remaining| async move {
+                let remaining_u32 = u32::try_from(remaining).unwrap_or(MAX_SR_LIMIT_PER_REQUEST);
+                let srlimit = remaining_u32.clamp(1, MAX_SR_LIMIT_PER_REQUEST);
 
-        let results = data
-            .get("query")
-            .and_then(|q| q.get("search"))
-            .and_then(|s| s.as_array())
-            .ok_or_else(|| ConnectorError::Other("Invalid response format".to_string()))?;
+                let mut params: Vec<(String, String)> = vec![
+                    ("list".to_string(), "search".to_string()),
+                    ("srprop".to_string(), "".to_string()),
+                    ("srlimit".to_string(), srlimit.to_string()),
+                    ("srsearch".to_string(), query.to_string()),
+                    ("format".to_string(), "json".to_string()),
+                    ("action".to_string(), "query".to_string()),
+                ];
 
-        let titles = results
-            .iter()
-            .filter_map(|item| {
-                item.get("title")
-                    .and_then(|t| t.as_str())
-                    .map(|s| s.to_string())
-            })
-            .collect();
+                if let Some(o) = cursor {
+                    params.push(("sroffset".to_string(), o.to_string()));
+                }
 
-        Ok(titles)
+                let response = self
+                    .client
+                    .get(self.base_url())
+                    .query(&params)
+                    .send()
+                    .await
+                    .map_err(ConnectorError::HttpRequest)?;
+
+                let data: Value = response.json().await.map_err(ConnectorError::HttpRequest)?;
+                let items = extract_search_titles(&data)?;
+                let next_cursor = extract_search_continue_offset(&data);
+
+                Ok::<_, ConnectorError>(Page { items, next_cursor })
+            },
+            |t: &String| Some(t.clone()),
+        )
+        .await
     }
 
     // Geo search for articles
@@ -296,6 +309,52 @@ impl WikipediaConnector {
             .to_string();
 
         Ok(summary)
+    }
+}
+
+fn extract_search_titles(data: &Value) -> Result<Vec<String>, ConnectorError> {
+    let results = data
+        .get("query")
+        .and_then(|q| q.get("search"))
+        .and_then(|s| s.as_array())
+        .ok_or_else(|| ConnectorError::Other("Invalid response format".to_string()))?;
+
+    Ok(results
+        .iter()
+        .filter_map(|item| {
+            item.get("title")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect())
+}
+
+fn extract_search_continue_offset(data: &Value) -> Option<u32> {
+    data.get("continue")
+        .and_then(|c| c.get("sroffset"))
+        .and_then(|o| o.as_u64())
+        .and_then(|o| u32::try_from(o).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_titles_and_continue_offset() {
+        let data = json!({
+            "continue": { "sroffset": 50, "continue": "-||" },
+            "query": {
+                "search": [
+                    { "title": "A" },
+                    { "title": "B" }
+                ]
+            }
+        });
+
+        let titles = extract_search_titles(&data).unwrap();
+        assert_eq!(titles, vec!["A".to_string(), "B".to_string()]);
+        assert_eq!(extract_search_continue_offset(&data), Some(50));
     }
 }
 

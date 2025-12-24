@@ -9,7 +9,7 @@ use crate::auth::AuthDetails;
 use crate::auth_store::{AuthStore, FileAuthStore};
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 #[allow(unused_imports)]
 use google_gmail1 as gmail1;
@@ -78,7 +78,7 @@ impl Connector for GmailConnector {
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
         let tools = vec![
-            Tool { name: Cow::Borrowed("list_messages"), title: None, description: Some(Cow::Borrowed("List messages (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"q":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":100},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+            Tool { name: Cow::Borrowed("list_messages"), title: None, description: Some(Cow::Borrowed("List messages (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"q":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":5000},"page_token":{"type":"string","description":"Optional cursor from a previous response (nextPageToken)."},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
             Tool { name: Cow::Borrowed("decode_message_raw"), title: None, description: Some(Cow::Borrowed("Decode a raw message (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"raw_base64url":{"type":"string"}},"required":["raw_base64url"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
             Tool { name: Cow::Borrowed("get_message"), title: None, description: Some(Cow::Borrowed("Get a message by id (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"id":{"type":"string"},"format":{"type":"string"},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":["id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
             Tool { name: Cow::Borrowed("get_thread"), title: None, description: Some(Cow::Borrowed("Get a thread by id (requires explicit user permission).")), input_schema: Arc::new(json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
@@ -97,6 +97,10 @@ impl Connector for GmailConnector {
                     .get("max_results")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(25);
+                let start_token = args
+                    .get("page_token")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let store = FileAuthStore::new_default();
                 let auth = store
                     .load("google-gmail")
@@ -109,28 +113,66 @@ impl Connector for GmailConnector {
                 })?;
                 let client = crate::oauth_client::google_client::new_https_client();
                 let hub = gmail1::Gmail::new(client, token.clone());
-                let mut call = hub.users().messages_list("me");
-                if !q.is_empty() {
-                    call = call.q(q);
-                }
-                let (_, list) = call
-                    .max_results(max.max(1) as u32)
-                    .doit()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("gmail error: {}", e)))?;
+
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let msgs = list.messages.unwrap_or_default().into_iter().map(|m| serde_json::json!({"id": m.id.unwrap_or_default(), "threadId": m.thread_id.unwrap_or_default()})).collect::<Vec<_>>();
-                    let v = serde_json::json!({"messages": msgs, "nextPageToken": list.next_page_token});
-                    structured_result_with_text(&v, None)
-                } else {
-                    let v = serde_json::to_value(&list)
-                        .map_err(|e| ConnectorError::Other(format!("serde: {}", e)))?;
-                    structured_result_with_text(&v, None)
-                }
+
+                let desired = (max.max(1) as u32).clamp(1, 5_000) as usize;
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    100,
+                    start_token,
+                    |cursor, remaining| {
+                        let hub = hub.clone();
+                        let q = q.to_string();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, 500);
+                            let mut call = hub.users().messages_list("me").max_results(per_page);
+                            if !q.is_empty() {
+                                call = call.q(&q);
+                            }
+                            if let Some(t) = cursor {
+                                call = call.page_token(&t);
+                            }
+                            let (_, list) = call.doit().await.map_err(|e| {
+                                ConnectorError::Other(format!("gmail error: {}", e))
+                            })?;
+
+                            let msgs = list
+                                .messages
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|m| {
+                                    if concise {
+                                        serde_json::json!({
+                                            "id": m.id.unwrap_or_default(),
+                                            "threadId": m.thread_id.unwrap_or_default()
+                                        })
+                                    } else {
+                                        serde_json::to_value(&m).unwrap_or(json!({}))
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items: msgs,
+                                next_cursor: list.next_page_token,
+                            })
+                        }
+                    },
+                    |m: &serde_json::Value| {
+                        m.get("id").and_then(|v| v.as_str()).map(str::to_string)
+                    },
+                )
+                .await?;
+
+                let v = serde_json::json!({
+                    "messages": collected.items,
+                    "nextPageToken": collected.next_cursor
+                });
+                structured_result_with_text(&v, None)
             }
             "get_message" => {
                 let id = args

@@ -1,7 +1,7 @@
 use crate::capabilities::ConnectorConfigSchema;
 use crate::cpu_pool;
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated, structured_result_with_text, Page};
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE};
@@ -10,7 +10,7 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
@@ -32,7 +32,7 @@ fn parse_response_format(s: Option<&str>) -> ResponseFormat {
 mod parse;
 use parse::{parse_pubmed_search_document, SearchParseInput};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PubMedArticle {
     pub title: String,
     pub authors: String,
@@ -143,6 +143,9 @@ pub struct PubMedConnector {
     client: reqwest::Client,
     headers: HeaderMap,
 }
+
+const MAX_SEARCH_LIMIT: usize = 5_000;
+const MAX_SEARCH_PAGES: usize = 100;
 
 impl PubMedConnector {
     pub async fn new() -> Result<Self, ConnectorError> {
@@ -274,6 +277,89 @@ impl PubMedConnector {
         );
 
         Ok(parse_result)
+    }
+
+    async fn search_pubmed_all(
+        &self,
+        query: &str,
+        start_page: usize,
+        limit: usize,
+        date_range: Option<(u32, u32)>,
+    ) -> Result<PubMedSearchResult, ConnectorError> {
+        let desired = limit.clamp(0, MAX_SEARCH_LIMIT);
+        if desired == 0 {
+            return Ok(PubMedSearchResult {
+                query: query.to_string(),
+                ..PubMedSearchResult::new()
+            });
+        }
+
+        #[derive(Default)]
+        struct SearchMeta {
+            total_results: Option<usize>,
+            total_pages: Option<usize>,
+            message: Option<String>,
+        }
+
+        let meta = Arc::new(Mutex::new(SearchMeta::default()));
+
+        let articles = collect_paginated(
+            desired,
+            MAX_SEARCH_PAGES,
+            Some(start_page),
+            |cursor, remaining| {
+                let meta = Arc::clone(&meta);
+                async move {
+                    let page = cursor.unwrap_or(start_page);
+                    let page_result = self
+                        .search_pubmed(query, page, remaining, date_range)
+                        .await?;
+
+                    {
+                        let mut m = meta.lock().map_err(|_| {
+                            ConnectorError::Other("PubMed meta lock poisoned".to_string())
+                        })?;
+                        if m.total_results.is_none() {
+                            m.total_results = Some(page_result.total_results);
+                        }
+                        if m.total_pages.is_none() {
+                            m.total_pages = page_result.total_pages;
+                        }
+                        if m.message.is_none() {
+                            m.message = page_result.message.clone();
+                        }
+                    }
+
+                    let has_articles = !page_result.articles.is_empty();
+                    let next_cursor = match page_result.total_pages {
+                        Some(tp) if page >= tp => None,
+                        Some(_) => Some(page.saturating_add(1)),
+                        None => Some(page.saturating_add(1)),
+                    };
+
+                    Ok::<_, ConnectorError>(Page {
+                        items: page_result.articles,
+                        next_cursor: if has_articles { next_cursor } else { None },
+                    })
+                }
+            },
+            |a: &PubMedArticle| Some(a.pmid.clone()),
+        )
+        .await?;
+
+        let meta = Arc::try_unwrap(meta)
+            .ok()
+            .and_then(|m| m.into_inner().ok())
+            .unwrap_or_default();
+
+        Ok(PubMedSearchResult {
+            query: query.to_string(),
+            articles,
+            total_results: meta.total_results.unwrap_or(0),
+            page: start_page,
+            total_pages: meta.total_pages,
+            message: meta.message,
+        })
     }
 
     async fn get_article_abstract(&self, pmid: &str) -> Result<PubMedAbstract, ConnectorError> {
@@ -773,10 +859,12 @@ get. Tip: keep limit small for concise output. Example: query=\"CRISPR AND off-t
                                 "type": "integer",
                                 "description": "Page number (default: 1)"
                             },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of results to return (default: 10). Lower this to keep responses concise."
-                            },
+	                            "limit": {
+	                                "type": "integer",
+	                                "description": "Maximum number of results to return (default: 10). Lower this to keep responses concise.",
+	                                "minimum": 0,
+	                                "maximum": 5000
+	                            },
                             "start_year": {
                                 "type": "integer",
                                 "description": "Start year for publication date range filter"
@@ -866,7 +954,7 @@ only need title+abstract_text. Example: pmid=\"34762503\".",
                     };
 
                 let result = self
-                    .search_pubmed(query, page, limit, date_range)
+                    .search_pubmed_all(query, page, limit, date_range)
                     .await
                     .unwrap_or_else(|e| {
                         error!("Error: {}", e);

@@ -13,7 +13,7 @@ use graph_rs_sdk::prelude::Graph;
 use crate::auth::AuthDetails;
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 use crate::{
     auth_store::{AuthStore, FileAuthStore},
@@ -119,15 +119,16 @@ impl Connector for GraphConnector {
                     "List Outlook messages (requires explicit user permission).",
                 )),
                 input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "top": { "type": "integer", "description": "Max messages (1-50)", "minimum": 1, "maximum": 50 }
-                        ,
-                            "response_format": { "type": "string", "enum": ["concise","detailed"], "description": "Default concise." }
-                        },
-                        "required": []
-}).as_object().expect("Schema object").clone()
+	                    json!({
+	                        "type": "object",
+	                        "properties": {
+	                            "top": { "type": "integer", "description": "Total messages to return (default 10, max 5000). Connector paginates internally.", "minimum": 1, "maximum": 5000 },
+	                            "next_link": { "type": "string", "description": "Optional cursor from a previous response (@odata.nextLink)." }
+	                        ,
+	                            "response_format": { "type": "string", "enum": ["concise","detailed"], "description": "Default concise." }
+	                        },
+	                        "required": []
+	}).as_object().expect("Schema object").clone()
                 ),
                 output_schema: None,
                 annotations: None,
@@ -140,15 +141,18 @@ impl Connector for GraphConnector {
                     "List Outlook calendar events (requires explicit user permission).",
                 )),
                 input_schema: Arc::new(
-                    json!({
-                        "type": "object",
-                        "properties": {
-                            "days_ahead": { "type": "integer", "description": "Window in days", "minimum": 1, "maximum": 30 }
-                        ,
-                            "response_format": { "type": "string", "enum": ["concise","detailed"], "description": "Default concise." }
-                        },
-                        "required": []
-}).as_object().expect("Schema object").clone()
+	                    json!({
+	                        "type": "object",
+	                        "properties": {
+	                            "days_ahead": { "type": "integer", "description": "Window in days", "minimum": 1, "maximum": 30 }
+	                            ,
+	                            "limit": { "type": "integer", "description": "Total events to return (default 25, max 5000). Connector paginates internally.", "minimum": 1, "maximum": 5000 },
+	                            "next_link": { "type": "string", "description": "Optional cursor from a previous response (@odata.nextLink)." }
+	                        ,
+	                            "response_format": { "type": "string", "enum": ["concise","detailed"], "description": "Default concise." }
+	                        },
+	                        "required": []
+	}).as_object().expect("Schema object").clone()
                 ),
                 output_schema: None,
                 annotations: None,
@@ -380,87 +384,228 @@ impl Connector for GraphConnector {
             }
 
             "list_messages" => {
-                let top = args.get("top").and_then(|v| v.as_i64()).unwrap_or(10);
+                let desired = args
+                    .get("top")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(10)
+                    .clamp(1, 5_000) as usize;
+                let start_link = args
+                    .get("next_link")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let token = self.access_token().await?;
 
-                let client = Graph::new(&token);
-                let resp = client
-                    .v1()
-                    .me()
-                    .messages()
-                    .list_messages()
-                    .top(&((top.max(1) as i32).to_string()))
-                    .send()
-                    .map_err(|e| ConnectorError::Other(format!("graph error: {}", e)))?;
-                let v: serde_json::Value = resp.into_body();
+                let http = reqwest::Client::new();
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let items = v
-                        .get("value")
-                        .and_then(|vv| vv.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let mapped: Vec<serde_json::Value> = items.into_iter().map(|m| {
-                        let id = m.get("id").and_then(|x| x.as_str()).unwrap_or_default();
-                        let subject = m.get("subject").and_then(|x| x.as_str()).unwrap_or("");
-                        let rcv = m.get("receivedDateTime").and_then(|x| x.as_str());
-                        let (from_name, from_addr) = (
-                            m.get("from").and_then(|f| f.get("emailAddress")).and_then(|e| e.get("name")).and_then(|s| s.as_str()).unwrap_or(""),
-                            m.get("from").and_then(|f| f.get("emailAddress")).and_then(|e| e.get("address")).and_then(|s| s.as_str()).unwrap_or("")
-                        );
-                        let from = if from_name.is_empty() { from_addr.to_string() } else { format!("{} <{}>", from_name, from_addr) };
-                        serde_json::json!({"id": id, "subject": subject, "from": from, "receivedDateTime": rcv})
-                    }).collect();
-                    let v = serde_json::json!({
-                        "messages": mapped,
-                        "nextLink": v.get(".nextLink").and_then(|s| s.as_str())
-                    });
-                    structured_result_with_text(&v, None)
-                } else {
-                    structured_result_with_text(&v, None)
-                }
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    100,
+                    start_link,
+                    |cursor, remaining| {
+                        let token = token.clone();
+                        let http = http.clone();
+                        async move {
+                            let per_page = (remaining as i32).clamp(1, 50);
+                            let v: serde_json::Value = if let Some(next) = cursor {
+                                http.get(next)
+                                    .bearer_auth(&token)
+                                    .send()
+                                    .await
+                                    .map_err(ConnectorError::HttpRequest)?
+                                    .json()
+                                    .await
+                                    .map_err(ConnectorError::HttpRequest)?
+                            } else {
+                                let client = Graph::new(&token);
+                                let resp = client
+                                    .v1()
+                                    .me()
+                                    .messages()
+                                    .list_messages()
+                                    .top(&(per_page.to_string()))
+                                    .send()
+                                    .map_err(|e| {
+                                        ConnectorError::Other(format!("graph error: {}", e))
+                                    })?;
+                                resp.into_body()
+                            };
+
+                            let items = v
+                                .get("value")
+                                .and_then(|vv| vv.as_array())
+                                .cloned()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|m| {
+                                    if concise {
+                                        let id = m
+                                            .get("id")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or_default();
+                                        let subject =
+                                            m.get("subject").and_then(|x| x.as_str()).unwrap_or("");
+                                        let rcv =
+                                            m.get("receivedDateTime").and_then(|x| x.as_str());
+                                        let (from_name, from_addr) = (
+                                            m.get("from")
+                                                .and_then(|f| f.get("emailAddress"))
+                                                .and_then(|e| e.get("name"))
+                                                .and_then(|s| s.as_str())
+                                                .unwrap_or(""),
+                                            m.get("from")
+                                                .and_then(|f| f.get("emailAddress"))
+                                                .and_then(|e| e.get("address"))
+                                                .and_then(|s| s.as_str())
+                                                .unwrap_or(""),
+                                        );
+                                        let from = if from_name.is_empty() {
+                                            from_addr.to_string()
+                                        } else {
+                                            format!("{} <{}>", from_name, from_addr)
+                                        };
+                                        serde_json::json!({
+                                            "id": id,
+                                            "subject": subject,
+                                            "from": from,
+                                            "receivedDateTime": rcv
+                                        })
+                                    } else {
+                                        m
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: v
+                                    .get("@odata.nextLink")
+                                    .and_then(|s| s.as_str())
+                                    .map(str::to_string),
+                            })
+                        }
+                    },
+                    |m: &serde_json::Value| {
+                        m.get("id").and_then(|x| x.as_str()).map(str::to_string)
+                    },
+                )
+                .await?;
+
+                let v = serde_json::json!({
+                    "messages": collected.items,
+                    "nextLink": collected.next_cursor
+                });
+                structured_result_with_text(&v, None)
             }
             "list_events" => {
                 let token = self.access_token().await?;
 
-                let client = Graph::new(&token);
-                let resp = client
-                    .v1()
-                    .me()
-                    .events()
-                    .list_events()
-                    .top("25")
-                    .send()
-                    .map_err(|e| ConnectorError::Other(format!("graph error: {}", e)))?;
-                let v: serde_json::Value = resp.into_body();
+                let desired = args
+                    .get("limit")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(25)
+                    .clamp(1, 5_000) as usize;
+                let start_link = args
+                    .get("next_link")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+
+                let http = reqwest::Client::new();
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let items = v
-                        .get("value")
-                        .and_then(|vv| vv.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let mapped: Vec<serde_json::Value> = items.into_iter().map(|e| {
-                        let id = e.get("id").and_then(|x| x.as_str()).unwrap_or_default();
-                        let subject = e.get("subject").and_then(|x| x.as_str()).unwrap_or("");
-                        let start = e.get("start").and_then(|t| t.get("dateTime")).and_then(|s| s.as_str());
-                        let end = e.get("end").and_then(|t| t.get("dateTime")).and_then(|s| s.as_str());
-                        serde_json::json!({"id": id, "subject": subject, "start": start, "end": end})
-                    }).collect();
-                    let v = serde_json::json!({
-                        "events": mapped,
-                        "nextLink": v.get(".nextLink").and_then(|s| s.as_str())
-                    });
-                    structured_result_with_text(&v, None)
-                } else {
-                    structured_result_with_text(&v, None)
-                }
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    100,
+                    start_link,
+                    |cursor, remaining| {
+                        let token = token.clone();
+                        let http = http.clone();
+                        async move {
+                            let per_page = (remaining as i32).clamp(1, 50);
+                            let v: serde_json::Value = if let Some(next) = cursor {
+                                http.get(next)
+                                    .bearer_auth(&token)
+                                    .send()
+                                    .await
+                                    .map_err(ConnectorError::HttpRequest)?
+                                    .json()
+                                    .await
+                                    .map_err(ConnectorError::HttpRequest)?
+                            } else {
+                                let client = Graph::new(&token);
+                                let resp = client
+                                    .v1()
+                                    .me()
+                                    .events()
+                                    .list_events()
+                                    .top(&(per_page.to_string()))
+                                    .send()
+                                    .map_err(|e| {
+                                        ConnectorError::Other(format!("graph error: {}", e))
+                                    })?;
+                                resp.into_body()
+                            };
+
+                            let items = v
+                                .get("value")
+                                .and_then(|vv| vv.as_array())
+                                .cloned()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|e| {
+                                    if concise {
+                                        let id = e
+                                            .get("id")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or_default();
+                                        let subject =
+                                            e.get("subject").and_then(|x| x.as_str()).unwrap_or("");
+                                        let start = e
+                                            .get("start")
+                                            .and_then(|t| t.get("dateTime"))
+                                            .and_then(|s| s.as_str());
+                                        let end = e
+                                            .get("end")
+                                            .and_then(|t| t.get("dateTime"))
+                                            .and_then(|s| s.as_str());
+                                        serde_json::json!({
+                                            "id": id,
+                                            "subject": subject,
+                                            "start": start,
+                                            "end": end
+                                        })
+                                    } else {
+                                        e
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: v
+                                    .get("@odata.nextLink")
+                                    .and_then(|s| s.as_str())
+                                    .map(str::to_string),
+                            })
+                        }
+                    },
+                    |e: &serde_json::Value| {
+                        e.get("id").and_then(|x| x.as_str()).map(str::to_string)
+                    },
+                )
+                .await?;
+
+                let v = serde_json::json!({
+                    "events": collected.items,
+                    "nextLink": collected.next_cursor
+                });
+                structured_result_with_text(&v, None)
             }
             "get_message" => {
                 let message_id = args.get("message_id").and_then(|v| v.as_str()).ok_or(

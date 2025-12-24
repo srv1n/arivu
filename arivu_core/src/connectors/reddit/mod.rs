@@ -7,18 +7,35 @@ use reqwest;
 use roux::util::{FeedOption, TimePeriod};
 use roux::{Reddit, Subreddit, User};
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use urlencoding;
 
 use crate::auth::AuthDetails;
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated, structured_result_with_text, Page};
 use crate::Connector;
 use rmcp::model::*;
 
 pub struct RedditConnector {
     client: Option<Reddit>,
+}
+
+const REDDIT_USER_AGENT: &str = "rzn_datasourcer/0.1.0";
+const DEFAULT_COMMENT_LIMIT: u32 = 25;
+// Soft limit to prevent runaway fetches when callers pass extremely large values.
+const MAX_COMMENT_LIMIT: u32 = 5_000;
+const MAX_SEARCH_LIMIT: u32 = 5_000;
+const SEARCH_PAGE_SIZE_MAX: usize = 100;
+const MAX_SEARCH_REQUESTS: usize = 50;
+const MORECHILDREN_BATCH_SIZE: usize = 100;
+const MAX_MORECHILDREN_REQUESTS: usize = 100;
+const MAX_TOTAL_COMMENTS: usize = 50_000;
+
+#[derive(Debug, Clone)]
+struct RedditSearchCursor {
+    after: String,
+    count: usize,
 }
 
 impl RedditConnector {
@@ -252,7 +269,7 @@ impl Connector for RedditConnector {
                         "query": { "type": "string", "description": "Search query text (keywords)." },
                         "sort": { "type": "string", "enum": ["relevance", "hot", "new", "top", "comments"], "default": "relevance", "description": "Search sort order." },
                         "time": { "type": "string", "enum": ["hour", "day", "week", "month", "year", "all"], "default": "all", "description": "Time window filter (maps to Reddit search 't=')." },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 5000, "default": 10 },
                         "subreddit": { "type": "string", "description": "Optional subreddit filter (e.g., \"rust\" or \"r/rust\")." },
                         "author": { "type": "string", "description": "Optional author filter (e.g., \"spez\")." },
                         "include_nsfw": { "type": "boolean", "default": false }
@@ -270,13 +287,13 @@ impl Connector for RedditConnector {
                 name: Cow::Borrowed("get"),
                 title: None,
                 description: Some(Cow::Borrowed(
-                    "Get a post with comments. Provide a full Reddit URL. Tip: set comment_sort=\"best\"|\"top\"|\"new\" and keep comment_limit small for token efficiency.",
+                    "Get a post with comments. Provide a full Reddit URL. Tip: set comment_sort=\"best\"|\"top\"|\"new\" and keep comment_limit small for token efficiency. The connector will paginate internally to fetch more than the first page when needed.",
                 )),
                 input_schema: Arc::new(json!({
                     "type": "object",
                     "properties": {
                         "post_url": { "type": "string", "description": "Full Reddit post URL." },
-                        "comment_limit": { "type": "integer", "minimum": 0, "maximum": 200, "default": 25 },
+                        "comment_limit": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 25 },
                         "comment_sort": { "type": "string", "enum": ["best", "top", "new", "controversial", "old", "qa"], "default": "best" }
                     },
                     "required": ["post_url"]
@@ -626,7 +643,6 @@ impl Connector for RedditConnector {
                 let query = args.get("query").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'query' parameter".to_string()),
                 )?;
-                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10) as u32;
                 let sort = args
                     .get("sort")
                     .and_then(|v| v.as_str())
@@ -728,8 +744,12 @@ impl Connector for RedditConnector {
 
                 // Use reqwest to directly call the Reddit search API
                 let client = reqwest::Client::new();
-                let page_size = 25; // Same as in Python code
                 let base_url = "https://www.reddit.com/";
+                let desired_limit =
+                    args.get("limit")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(10)
+                        .clamp(1, i64::from(MAX_SEARCH_LIMIT)) as usize;
                 let sort_param = match sort.as_str() {
                     "relevance" | "hot" | "new" | "top" | "comments" => sort.as_str(),
                     _ => {
@@ -746,43 +766,80 @@ impl Connector for RedditConnector {
                         ));
                     }
                 };
-                let search_url = format!(
-                    "{}search.json?q={}&limit={}&include_over_18={}&sort={}&t={}",
-                    base_url,
-                    urlencoding::encode(&search_query),
-                    page_size,
-                    include_nsfw,
-                    sort_param,
-                    time_param
-                );
 
-                let response = client
-                    .get(&search_url)
-                    .header("User-Agent", "rzn_datasourcer/0.1.0")
-                    .send()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("Failed to send request: {}", e)))?;
+                let posts = collect_paginated(
+                    desired_limit,
+                    MAX_SEARCH_REQUESTS,
+                    None::<RedditSearchCursor>,
+                    |cursor, remaining| {
+                        let client = client.clone();
+                        let search_query = search_query.clone();
+                        async move {
+                            let page_limit = remaining.min(SEARCH_PAGE_SIZE_MAX);
 
-                let search_results: Value = response
-                    .json()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("Failed to parse JSON: {}", e)))?;
+                            let mut params: Vec<(String, String)> = vec![
+                                ("q".to_string(), search_query.clone()),
+                                ("limit".to_string(), page_limit.to_string()),
+                                ("include_over_18".to_string(), include_nsfw.to_string()),
+                                ("sort".to_string(), sort_param.to_string()),
+                                ("t".to_string(), time_param.to_string()),
+                                ("raw_json".to_string(), "1".to_string()),
+                            ];
 
-                // Check if there are results
-                if search_results.get("data").is_none() {
-                    let empty: Vec<Value> = Vec::new();
-                    return structured_result_with_text(&empty, Some("[]".to_string()));
-                }
+                            let mut count = 0usize;
+                            if let Some(c) = cursor {
+                                count = c.count;
+                                params.push(("after".to_string(), c.after));
+                                params.push(("count".to_string(), count.to_string()));
+                            }
 
-                let posts = search_results["data"]["children"]
-                    .as_array()
-                    .ok_or(ConnectorError::Other("Invalid response format".to_string()))?;
+                            let response = client
+                                .get(format!("{base_url}search.json"))
+                                .header("User-Agent", REDDIT_USER_AGENT)
+                                .query(&params)
+                                .send()
+                                .await
+                                .map_err(|e| {
+                                    ConnectorError::Other(format!("Failed to send request: {}", e))
+                                })?;
+
+                            let search_results: Value = response.json().await.map_err(|e| {
+                                ConnectorError::Other(format!("Failed to parse JSON: {}", e))
+                            })?;
+
+                            let data = search_results.get("data").ok_or_else(|| {
+                                ConnectorError::Other("Invalid response format".to_string())
+                            })?;
+
+                            let children = data.get("children").and_then(|c| c.as_array()).ok_or(
+                                ConnectorError::Other("Invalid response format".to_string()),
+                            )?;
+
+                            let after = data.get("after").and_then(|v| v.as_str()).unwrap_or("");
+                            let next_cursor = if after.is_empty() {
+                                None
+                            } else {
+                                Some(RedditSearchCursor {
+                                    after: after.to_string(),
+                                    count: count.saturating_add(children.len()),
+                                })
+                            };
+
+                            Ok::<_, ConnectorError>(Page {
+                                items: children.clone(),
+                                next_cursor,
+                            })
+                        }
+                    },
+                    |post: &Value| post["data"]["id"].as_str().map(str::to_string),
+                )
+                .await?;
 
                 let mut img_results = Vec::new();
                 let mut text_results = Vec::new();
 
                 // Process results similar to Python code
-                for post in posts.iter().take(limit as usize) {
+                for post in posts.iter().take(desired_limit) {
                     let data = &post["data"];
 
                     let title = data["title"].as_str().unwrap_or("").to_string();
@@ -835,10 +892,11 @@ impl Connector for RedditConnector {
                 let post_url = args.get("post_url").and_then(|v| v.as_str()).ok_or(
                     ConnectorError::InvalidParams("Missing 'post_url' parameter".to_string()),
                 )?;
-                let comment_limit = args
-                    .get("comment_limit")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(25) as u32;
+                let comment_limit =
+                    args.get("comment_limit")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(i64::from(DEFAULT_COMMENT_LIMIT))
+                        .clamp(0, i64::from(MAX_COMMENT_LIMIT)) as u32;
                 let comment_sort = args
                     .get("comment_sort")
                     .and_then(|v| v.as_str())
@@ -851,7 +909,7 @@ impl Connector for RedditConnector {
 
                 // Construct the API URL to fetch post details with comments
                 let api_url = format!(
-                    "https://www.reddit.com/r/{}/comments/{}.json?limit={}&sort={}",
+                    "https://www.reddit.com/r/{}/comments/{}.json?limit={}&sort={}&raw_json=1",
                     post_info.subreddit, post_info.post_id, comment_limit, comment_sort
                 );
 
@@ -859,7 +917,7 @@ impl Connector for RedditConnector {
                 let client = reqwest::Client::new();
                 let response = client
                     .get(&api_url)
-                    .header("User-Agent", "rzn_datasourcer/0.1.0")
+                    .header("User-Agent", REDDIT_USER_AGENT)
                     .send()
                     .await
                     .map_err(|e| ConnectorError::Other(format!("Failed to send request: {}", e)))?;
@@ -877,7 +935,15 @@ impl Connector for RedditConnector {
                 let post = &post_data[0]["data"]["children"][0]["data"];
 
                 // Extract comments from the second element
-                let comments = Self::parse_comments(&post_data[1]["data"]["children"]);
+                let link_fullname = format!("t3_{}", post_info.post_id);
+                let comments = Self::fetch_comment_tree_with_more(
+                    &client,
+                    &post_data[1]["data"]["children"],
+                    &link_fullname,
+                    comment_limit,
+                    comment_sort,
+                )
+                .await?;
 
                 // Build the result
                 let result = json!({
@@ -965,45 +1031,411 @@ impl RedditConnector {
         None
     }
 
-    // Helper method to recursively parse comments
-    fn parse_comments(comments_data: &Value) -> Vec<Value> {
-        let empty_vec = Vec::new();
-        let comments = comments_data.as_array().unwrap_or(&empty_vec);
+    fn sort_for_morechildren(comment_sort: &str) -> &str {
+        match comment_sort {
+            // Reddit's /api/morechildren uses "confidence" instead of "best".
+            "best" => "confidence",
+            "top" => "top",
+            "new" => "new",
+            "controversial" => "controversial",
+            "old" => "old",
+            "qa" => "qa",
+            // Keep same default behavior as the main comments endpoint.
+            _ => "confidence",
+        }
+    }
 
-        comments
-            .iter()
-            .filter_map(|comment| {
-                let kind = comment["kind"].as_str().unwrap_or("");
+    async fn fetch_comment_tree_with_more(
+        client: &reqwest::Client,
+        initial_children: &Value,
+        link_fullname: &str,
+        top_level_limit: u32,
+        comment_sort: &str,
+    ) -> Result<Vec<Value>, ConnectorError> {
+        if top_level_limit == 0 {
+            return Ok(Vec::new());
+        }
 
-                // Skip "more" type comments which are just placeholders
-                if kind == "more" {
-                    return None;
+        let mut order: u64 = 0;
+        let mut comments_by_id: HashMap<String, CollectedComment> = HashMap::new();
+        let mut more_queue: VecDeque<MorePlaceholder> = VecDeque::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        Self::collect_from_listing(
+            initial_children,
+            link_fullname,
+            &mut order,
+            &mut comments_by_id,
+            &mut more_queue,
+            &mut seen,
+        );
+
+        let mut more_requests: usize = 0;
+
+        while Self::top_level_count(&comments_by_id, link_fullname) < top_level_limit as usize
+            && !more_queue.is_empty()
+            && more_requests < MAX_MORECHILDREN_REQUESTS
+            && comments_by_id.len() < MAX_TOTAL_COMMENTS
+        {
+            // Prefer placeholders that expand top-level comments (parent == link fullname).
+            let preferred_idx = more_queue
+                .iter()
+                .position(|m| m.parent_fullname == link_fullname);
+            let more = preferred_idx
+                .and_then(|idx| more_queue.remove(idx))
+                .unwrap_or_else(|| {
+                    more_queue.pop_front().unwrap_or_else(|| MorePlaceholder {
+                        parent_fullname: link_fullname.to_string(),
+                        children: Vec::new(),
+                        depth: 0,
+                    })
+                });
+
+            if more.children.is_empty() {
+                continue;
+            }
+
+            for chunk in more.children.chunks(MORECHILDREN_BATCH_SIZE) {
+                if Self::top_level_count(&comments_by_id, link_fullname) >= top_level_limit as usize
+                    || comments_by_id.len() >= MAX_TOTAL_COMMENTS
+                    || more_requests >= MAX_MORECHILDREN_REQUESTS
+                {
+                    break;
                 }
 
-                let data = &comment["data"];
+                let unfetched: Vec<String> = chunk
+                    .iter()
+                    .filter(|id| !seen.contains(*id))
+                    .cloned()
+                    .collect();
+                if unfetched.is_empty() {
+                    continue;
+                }
 
-                // Parse replies recursively if they exist
-                let replies = if data["replies"].is_object() {
-                    Self::parse_comments(&data["replies"]["data"]["children"])
-                } else {
-                    Vec::new()
-                };
+                let things = Self::fetch_morechildren_things(
+                    client,
+                    link_fullname,
+                    &unfetched,
+                    comment_sort,
+                    more.depth,
+                )
+                .await?;
+                more_requests += 1;
 
-                Some(json!({
-                    "id": data["id"].as_str().unwrap_or(""),
-                    "author": data["author"].as_str().unwrap_or(""),
-                    "body": data["body"].as_str().unwrap_or(""),
-                    "body_html": data["body_html"].as_str().unwrap_or(""),
-                    "score": data["score"].as_i64().unwrap_or(0),
-                    "created_utc": data["created_utc"].as_f64().unwrap_or(0.0),
-                    "permalink": data["permalink"].as_str().unwrap_or(""),
-                    "depth": data["depth"].as_i64().unwrap_or(0),
-                    "is_submitter": data["is_submitter"].as_bool().unwrap_or(false),
-                    "distinguished": data["distinguished"].as_str().unwrap_or(""),
-                    "stickied": data["stickied"].as_bool().unwrap_or(false),
-                    "replies": replies
-                }))
-            })
+                Self::collect_from_things(
+                    &things,
+                    link_fullname,
+                    &mut order,
+                    &mut comments_by_id,
+                    &mut more_queue,
+                    &mut seen,
+                );
+            }
+        }
+
+        Ok(Self::build_comment_tree(
+            &comments_by_id,
+            link_fullname,
+            top_level_limit as usize,
+        ))
+    }
+
+    fn top_level_count(
+        comments_by_id: &HashMap<String, CollectedComment>,
+        link_fullname: &str,
+    ) -> usize {
+        comments_by_id
+            .values()
+            .filter(|c| c.parent_fullname == link_fullname)
+            .count()
+    }
+
+    fn collect_from_listing(
+        children: &Value,
+        link_fullname: &str,
+        order: &mut u64,
+        comments_by_id: &mut HashMap<String, CollectedComment>,
+        more_queue: &mut VecDeque<MorePlaceholder>,
+        seen: &mut HashSet<String>,
+    ) {
+        let empty_vec = Vec::new();
+        let items = children.as_array().unwrap_or(&empty_vec);
+        Self::collect_from_things(
+            items,
+            link_fullname,
+            order,
+            comments_by_id,
+            more_queue,
+            seen,
+        );
+    }
+
+    fn collect_from_things(
+        things: &[Value],
+        link_fullname: &str,
+        order: &mut u64,
+        comments_by_id: &mut HashMap<String, CollectedComment>,
+        more_queue: &mut VecDeque<MorePlaceholder>,
+        seen: &mut HashSet<String>,
+    ) {
+        for thing in things {
+            let kind = thing["kind"].as_str().unwrap_or("");
+            match kind {
+                "t1" => {
+                    let data = &thing["data"];
+                    let id = data["id"].as_str().unwrap_or("").to_string();
+                    if id.is_empty() || seen.contains(&id) {
+                        continue;
+                    }
+
+                    let parent_fullname = data["parent_id"]
+                        .as_str()
+                        .unwrap_or(link_fullname)
+                        .to_string();
+                    let comment = CollectedComment {
+                        id: id.clone(),
+                        parent_fullname,
+                        author: data["author"].as_str().unwrap_or("").to_string(),
+                        body: data["body"].as_str().unwrap_or("").to_string(),
+                        body_html: data["body_html"].as_str().unwrap_or("").to_string(),
+                        score: data["score"].as_i64().unwrap_or(0),
+                        created_utc: data["created_utc"].as_f64().unwrap_or(0.0),
+                        permalink: data["permalink"].as_str().unwrap_or("").to_string(),
+                        is_submitter: data["is_submitter"].as_bool().unwrap_or(false),
+                        distinguished: data["distinguished"].as_str().unwrap_or("").to_string(),
+                        stickied: data["stickied"].as_bool().unwrap_or(false),
+                        order: *order,
+                    };
+                    *order = order.saturating_add(1);
+                    seen.insert(id.clone());
+                    comments_by_id.insert(id.clone(), comment);
+
+                    if data["replies"].is_object() {
+                        let replies = &data["replies"]["data"]["children"];
+                        let empty_vec = Vec::new();
+                        let reply_items = replies.as_array().unwrap_or(&empty_vec);
+                        Self::collect_from_things(
+                            reply_items,
+                            link_fullname,
+                            order,
+                            comments_by_id,
+                            more_queue,
+                            seen,
+                        );
+                    }
+                }
+                "more" => {
+                    let data = &thing["data"];
+                    let parent_fullname = data["parent_id"]
+                        .as_str()
+                        .unwrap_or(link_fullname)
+                        .to_string();
+                    let depth = data["depth"].as_i64().unwrap_or(0);
+                    let children = data["children"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+
+                    if !children.is_empty() {
+                        more_queue.push_back(MorePlaceholder {
+                            parent_fullname,
+                            children,
+                            depth,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn fetch_morechildren_things(
+        client: &reqwest::Client,
+        link_fullname: &str,
+        children: &[String],
+        comment_sort: &str,
+        depth: i64,
+    ) -> Result<Vec<Value>, ConnectorError> {
+        let url = "https://www.reddit.com/api/morechildren.json";
+        let params = [
+            ("api_type", "json".to_string()),
+            ("link_id", link_fullname.to_string()),
+            ("children", children.join(",")),
+            ("limit_children", "true".to_string()),
+            (
+                "sort",
+                Self::sort_for_morechildren(comment_sort).to_string(),
+            ),
+            ("raw_json", "1".to_string()),
+            ("depth", depth.to_string()),
+        ];
+
+        let response = client
+            .get(url)
+            .header("User-Agent", REDDIT_USER_AGENT)
+            .query(&params)
+            .send()
+            .await
+            .map_err(|e| ConnectorError::Other(format!("Failed to send request: {}", e)))?;
+
+        let data: Value = response
+            .json()
+            .await
+            .map_err(|e| ConnectorError::Other(format!("Failed to parse JSON: {}", e)))?;
+
+        let things = data["json"]["data"]["things"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(things)
+    }
+
+    fn build_comment_tree(
+        comments_by_id: &HashMap<String, CollectedComment>,
+        link_fullname: &str,
+        top_level_limit: usize,
+    ) -> Vec<Value> {
+        let mut children_by_parent: HashMap<String, Vec<String>> = HashMap::new();
+        for (id, comment) in comments_by_id {
+            children_by_parent
+                .entry(comment.parent_fullname.clone())
+                .or_default()
+                .push(id.clone());
+        }
+
+        for children in children_by_parent.values_mut() {
+            children.sort_by_key(|id| comments_by_id.get(id).map(|c| c.order).unwrap_or(u64::MAX));
+        }
+
+        let top_level_ids = children_by_parent
+            .get(link_fullname)
+            .cloned()
+            .unwrap_or_default();
+
+        top_level_ids
+            .into_iter()
+            .take(top_level_limit)
+            .filter_map(|id| Self::render_comment(&id, comments_by_id, &children_by_parent, 0))
             .collect()
+    }
+
+    fn render_comment(
+        id: &str,
+        comments_by_id: &HashMap<String, CollectedComment>,
+        children_by_parent: &HashMap<String, Vec<String>>,
+        depth: i64,
+    ) -> Option<Value> {
+        let comment = comments_by_id.get(id)?;
+
+        let fullname = format!("t1_{}", comment.id);
+        let reply_ids = children_by_parent
+            .get(&fullname)
+            .cloned()
+            .unwrap_or_default();
+        let replies: Vec<Value> = reply_ids
+            .into_iter()
+            .filter_map(|rid| {
+                Self::render_comment(&rid, comments_by_id, children_by_parent, depth + 1)
+            })
+            .collect();
+
+        Some(json!({
+            "id": comment.id,
+            "author": comment.author,
+            "body": comment.body,
+            "body_html": comment.body_html,
+            "score": comment.score,
+            "created_utc": comment.created_utc,
+            "permalink": comment.permalink,
+            "depth": depth,
+            "is_submitter": comment.is_submitter,
+            "distinguished": comment.distinguished,
+            "stickied": comment.stickied,
+            "replies": replies
+        }))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MorePlaceholder {
+    parent_fullname: String,
+    children: Vec<String>,
+    depth: i64,
+}
+
+#[derive(Debug, Clone)]
+struct CollectedComment {
+    id: String,
+    parent_fullname: String,
+    author: String,
+    body: String,
+    body_html: String,
+    score: i64,
+    created_utc: f64,
+    permalink: String,
+    is_submitter: bool,
+    distinguished: String,
+    stickied: bool,
+    order: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_tree_from_morechildren_things() {
+        let link_fullname = "t3_post";
+
+        let initial_children = json!([
+            { "kind": "t1", "data": { "id": "c1", "parent_id": "t3_post", "author": "a", "body": "b", "body_html": "h", "score": 1, "created_utc": 1.0, "permalink": "/r/x/comments/post/_/c1", "depth": 0, "is_submitter": false, "distinguished": "", "stickied": false, "replies": "" } },
+            { "kind": "more", "data": { "parent_id": "t3_post", "children": ["c2", "c3"], "depth": 0 } }
+        ]);
+
+        let mut order = 0u64;
+        let mut comments_by_id: HashMap<String, CollectedComment> = HashMap::new();
+        let mut more_queue: VecDeque<MorePlaceholder> = VecDeque::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        Self::collect_from_listing(
+            &initial_children,
+            link_fullname,
+            &mut order,
+            &mut comments_by_id,
+            &mut more_queue,
+            &mut seen,
+        );
+
+        assert_eq!(comments_by_id.len(), 1);
+        assert_eq!(more_queue.len(), 1);
+
+        let more_things = vec![
+            json!({ "kind": "t1", "data": { "id": "c2", "parent_id": "t3_post", "author": "a2", "body": "b2", "body_html": "h2", "score": 2, "created_utc": 2.0, "permalink": "/r/x/comments/post/_/c2", "is_submitter": false, "distinguished": "", "stickied": false } }),
+            json!({ "kind": "t1", "data": { "id": "c3", "parent_id": "t3_post", "author": "a3", "body": "b3", "body_html": "h3", "score": 3, "created_utc": 3.0, "permalink": "/r/x/comments/post/_/c3", "is_submitter": false, "distinguished": "", "stickied": false } }),
+            json!({ "kind": "t1", "data": { "id": "r1", "parent_id": "t1_c2", "author": "ar", "body": "br", "body_html": "hr", "score": 1, "created_utc": 4.0, "permalink": "/r/x/comments/post/_/r1", "is_submitter": false, "distinguished": "", "stickied": false } }),
+        ];
+
+        Self::collect_from_things(
+            &more_things,
+            link_fullname,
+            &mut order,
+            &mut comments_by_id,
+            &mut more_queue,
+            &mut seen,
+        );
+
+        let tree = Self::build_comment_tree(&comments_by_id, link_fullname, 10);
+        assert_eq!(tree.len(), 3);
+        assert_eq!(tree[0]["id"], "c1");
+        assert_eq!(tree[1]["id"], "c2");
+        assert_eq!(tree[2]["id"], "c3");
+
+        assert_eq!(tree[1]["depth"], 0);
+        assert_eq!(tree[1]["replies"][0]["id"], "r1");
+        assert_eq!(tree[1]["replies"][0]["depth"], 1);
     }
 }

@@ -7,7 +7,7 @@ use crate::auth::AuthDetails;
 use crate::auth_store::{AuthStore, FileAuthStore};
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 #[allow(unused_imports)]
 use google_calendar3 as calendar3;
@@ -61,7 +61,7 @@ impl Connector for GoogleCalendarConnector {
         _r: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
         let mut tools = vec![
-Tool { name: Cow::Borrowed("list_events"), title: None, description: Some(Cow::Borrowed("List events (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"max_results":{"type":"integer","minimum":1,"maximum":250},"time_min":{"type":"string","description":"RFC3339"},"response_format":{"type":"string","enum":["concise","detailed"],"description":"Default concise."}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
+Tool { name: Cow::Borrowed("list_events"), title: None, description: Some(Cow::Borrowed("List events (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"max_results":{"type":"integer","minimum":1,"maximum":5000},"page_token":{"type":"string","description":"Optional cursor from a previous response (nextPageToken)."},"time_min":{"type":"string","description":"RFC3339"},"response_format":{"type":"string","enum":["concise","detailed"],"description":"Default concise."}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None },
         ];
         tools.push(Tool { name: std::borrow::Cow::Borrowed("create_event"), title: None, description: Some(std::borrow::Cow::Borrowed("Create an event (requires explicit user permission).")), input_schema: std::sync::Arc::new(serde_json::json!({"type":"object","properties":{"summary":{"type":"string"},"start":{"type":"string","description":"RFC3339"},"end":{"type":"string","description":"RFC3339"}},"required":["summary","start","end"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
         tools.push(Tool { name: std::borrow::Cow::Borrowed("sync_events"), title: None, description: Some(std::borrow::Cow::Borrowed("Incremental sync (requires explicit user permission).")), input_schema: std::sync::Arc::new(serde_json::json!({"type":"object","properties":{"sync_token":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":250}} ,"required":["sync_token"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
@@ -103,6 +103,10 @@ Tool { name: Cow::Borrowed("list_events"), title: None, description: Some(Cow::B
                     .get("max_results")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(25);
+                let start_token = args
+                    .get("page_token")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let time_min = args
                     .get("time_min")
                     .and_then(|v| v.as_str())
@@ -120,44 +124,70 @@ Tool { name: Cow::Borrowed("list_events"), title: None, description: Some(Cow::B
                 })?;
                 let client = crate::oauth_client::google_client::new_https_client();
                 let hub = calendar3::CalendarHub::new(client, token.clone());
-                let mut call = hub.events().list("primary");
                 let time_min_dt = chrono::DateTime::parse_from_rfc3339(&time_min)
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now());
-                call = call
-                    .single_events(true)
-                    .order_by("startTime")
-                    .time_min(time_min_dt)
-                    .max_results(max.max(1) as i32);
-                let (_, events) = call
-                    .doit()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("calendar error: {}", e)))?;
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let items = events
-                        .items
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|ev| {
-                            serde_json::json!({
-                                "id": ev.id.unwrap_or_default(),
-                                "summary": ev.summary.unwrap_or_default(),
-                                "start": ev.start.and_then(|t| t.date_time.map(|d| d.to_rfc3339())),
-                                "end": ev.end.and_then(|t| t.date_time.map(|d| d.to_rfc3339())),
+
+                let desired = (max.max(1) as u32).clamp(1, 5_000) as usize;
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    100,
+                    start_token,
+                    |cursor, remaining| {
+                        let hub = hub.clone();
+                        async move {
+                            let per_page = (remaining as i32).clamp(1, 250);
+                            let mut call = hub
+                                .events()
+                                .list("primary")
+                                .single_events(true)
+                                .order_by("startTime")
+                                .time_min(time_min_dt)
+                                .max_results(per_page);
+                            if let Some(t) = cursor {
+                                call = call.page_token(&t);
+                            }
+                            let (_, events) = call.doit().await.map_err(|e| {
+                                ConnectorError::Other(format!("calendar error: {}", e))
+                            })?;
+
+                            let items = events
+                                .items
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|ev| {
+                                    if concise {
+                                        serde_json::json!({
+                                            "id": ev.id.unwrap_or_default(),
+                                            "summary": ev.summary.unwrap_or_default(),
+                                            "start": ev.start.and_then(|t| t.date_time.map(|d| d.to_rfc3339())),
+                                            "end": ev.end.and_then(|t| t.date_time.map(|d| d.to_rfc3339())),
+                                        })
+                                    } else {
+                                        serde_json::to_value(&ev).unwrap_or(serde_json::json!({}))
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: events.next_page_token,
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    let v = serde_json::json!({"events": items, "nextPageToken": events.next_page_token, "nextSyncToken": events.next_sync_token});
-                    structured_result_with_text(&v, None)
-                } else {
-                    let v = serde_json::to_value(&events)
-                        .map_err(|e| ConnectorError::Other(format!("serde: {}", e)))?;
-                    structured_result_with_text(&v, None)
-                }
+                        }
+                    },
+                    |e: &serde_json::Value| e.get("id").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
+                let v = serde_json::json!({
+                    "events": collected.items,
+                    "nextPageToken": collected.next_cursor
+                });
+                structured_result_with_text(&v, None)
             }
             "create_event" => {
                 let summary = args.get("summary").and_then(|v| v.as_str()).ok_or(

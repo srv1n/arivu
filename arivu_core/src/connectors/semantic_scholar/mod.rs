@@ -1,6 +1,7 @@
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
 use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated, Page};
 use crate::{auth::AuthDetails, Connector};
 use async_trait::async_trait;
 use reqwest::StatusCode;
@@ -85,6 +86,8 @@ struct RecommendationsResponse {
 #[derive(Debug, Deserialize)]
 struct SearchPapersArgs {
     query: String,
+    #[serde(default)]
+    limit: Option<i32>,
     #[serde(default = "default_page_size")]
     page_size: i32,
     #[serde(default = "default_page")]
@@ -144,6 +147,10 @@ pub struct SemanticScholarConnector {
     api_key: Option<String>,
 }
 
+const MAX_LIMIT: i32 = 5_000;
+const MAX_LIMIT_PER_REQUEST: i32 = 100;
+const MAX_REQUESTS: usize = 100;
+
 impl SemanticScholarConnector {
     pub async fn new(auth: AuthDetails) -> Result<Self, ConnectorError> {
         let client = reqwest::Client::builder()
@@ -156,16 +163,17 @@ impl SemanticScholarConnector {
         Ok(SemanticScholarConnector { client, api_key })
     }
 
-    async fn search_papers(
-        &self,
+    fn build_search_url(
         args: &SearchPapersArgs,
-    ) -> Result<PaperSearchResponse, ConnectorError> {
+        limit: i32,
+        offset: i32,
+    ) -> Result<String, ConnectorError> {
         // Use the Academic Graph API for paper search
         let mut url = format!(
             "https://api.semanticscholar.org/graph/v1/paper/search/bulk?query={}&limit={}&offset={}",
             urlencoding::encode(&args.query),
-            args.page_size,
-            (args.page - 1) * args.page_size
+            limit,
+            offset
         );
 
         // Add fields parameter to get comprehensive paper details
@@ -188,6 +196,16 @@ impl SemanticScholarConnector {
             }
         }
 
+        Ok(url)
+    }
+
+    async fn search_papers_page(
+        &self,
+        args: &SearchPapersArgs,
+        limit: i32,
+        offset: i32,
+    ) -> Result<PaperSearchResponse, ConnectorError> {
+        let url = Self::build_search_url(args, limit, offset)?;
         let mut request = self.client.get(&url);
 
         // Add API key if available
@@ -196,10 +214,6 @@ impl SemanticScholarConnector {
         }
 
         let response = request.send().await.map_err(ConnectorError::HttpRequest)?;
-
-        if response.status() == StatusCode::NOT_FOUND {
-            return Err(ConnectorError::ResourceNotFound);
-        }
 
         if response.status() == StatusCode::NOT_FOUND {
             return Err(ConnectorError::ResourceNotFound);
@@ -229,6 +243,54 @@ impl SemanticScholarConnector {
         // };
 
         Ok(search_response)
+    }
+
+    async fn search_papers(
+        &self,
+        args: &SearchPapersArgs,
+    ) -> Result<PaperSearchResponse, ConnectorError> {
+        let requested_page_size = args.page_size.max(1);
+        let offset = (args.page - 1).saturating_mul(requested_page_size);
+        let limit = requested_page_size.clamp(1, MAX_LIMIT_PER_REQUEST);
+        self.search_papers_page(args, limit, offset).await
+    }
+
+    async fn search_papers_all(
+        &self,
+        args: &SearchPapersArgs,
+    ) -> Result<Vec<Paper>, ConnectorError> {
+        let requested_page_size = args.page_size.max(1);
+        let start_offset = (args.page - 1).saturating_mul(requested_page_size);
+        let desired = args
+            .limit
+            .unwrap_or(requested_page_size)
+            .clamp(1, MAX_LIMIT) as usize;
+
+        collect_paginated(
+            desired,
+            MAX_REQUESTS,
+            Some(start_offset),
+            |cursor, remaining| async move {
+                let offset = cursor.unwrap_or(start_offset);
+                let remaining_i32 = i32::try_from(remaining).unwrap_or(MAX_LIMIT_PER_REQUEST);
+                let page_limit = remaining_i32.clamp(1, MAX_LIMIT_PER_REQUEST);
+
+                let resp = self.search_papers_page(args, page_limit, offset).await?;
+                let next_cursor =
+                    if resp.data.is_empty() || (resp.next.is_none() && resp.offset.is_none()) {
+                        None
+                    } else {
+                        Some(offset.saturating_add(page_limit))
+                    };
+
+                Ok::<_, ConnectorError>(Page {
+                    items: resp.data,
+                    next_cursor,
+                })
+            },
+            |p: &Paper| Some(p.paper_id.clone()),
+        )
+        .await
     }
 
     async fn get_paper_details(&self, paper_id: &str) -> Result<Paper, ConnectorError> {
@@ -329,6 +391,55 @@ impl SemanticScholarConnector {
             .json::<Value>()
             .await
             .map_err(|e| ConnectorError::Other(format!("Failed to parse JSON response: {}", e)))
+    }
+
+    async fn get_paper_edges_all(
+        &self,
+        paper_id: &str,
+        edge: &str,
+        total_limit: i32,
+    ) -> Result<Value, ConnectorError> {
+        let desired = total_limit.clamp(1, MAX_LIMIT) as usize;
+
+        let items = collect_paginated(
+            desired,
+            MAX_REQUESTS,
+            Some(0i32),
+            |cursor, remaining| async move {
+                let offset = cursor.unwrap_or(0);
+                let remaining_i32 = i32::try_from(remaining).unwrap_or(MAX_LIMIT_PER_REQUEST);
+                let page_limit = remaining_i32.clamp(1, MAX_LIMIT_PER_REQUEST);
+
+                let page = self
+                    .get_paper_edges(paper_id, edge, page_limit, offset)
+                    .await?;
+                let data = page
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let next_cursor = if data.is_empty() {
+                    None
+                } else {
+                    Some(offset.saturating_add(page_limit))
+                };
+
+                Ok::<_, ConnectorError>(Page {
+                    items: data,
+                    next_cursor,
+                })
+            },
+            |item: &Value| {
+                item.get("citedPaper")
+                    .or_else(|| item.get("citingPaper"))
+                    .and_then(|p| p.get("paperId"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            },
+        )
+        .await?;
+
+        Ok(json!({ "data": items }))
     }
 
     fn format_paper(&self, paper: &Paper) -> HashMap<String, Value> {
@@ -438,6 +549,7 @@ impl Connector for SemanticScholarConnector {
         // Simple test to check if the API is accessible
         let args = SearchPapersArgs {
             query: "artificial intelligence".to_string(),
+            limit: None,
             page_size: 1,
             page: 1,
             sort: "relevance".to_string(),
@@ -554,6 +666,12 @@ impl Connector for SemanticScholarConnector {
                         "query": {
                             "type": "string",
                             "description": "The search query."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Total number of results to return (default: page_size). When set, the connector paginates internally.",
+                            "minimum": 1,
+                            "maximum": 5000
                         },
                         "page_size": {
                             "type": "integer",
@@ -685,11 +803,15 @@ impl Connector for SemanticScholarConnector {
                     ConnectorError::InvalidParams(format!("Invalid arguments: {}", e))
                 })?;
 
-                let search_response = self.search_papers(&args).await?;
-                tracing::debug!(?search_response, "Semantic Scholar search response");
+                let papers_raw = if args.limit.is_some() {
+                    self.search_papers_all(&args).await?
+                } else {
+                    let resp = self.search_papers(&args).await?;
+                    tracing::debug!(?resp, "Semantic Scholar search response");
+                    resp.data
+                };
 
-                let papers: Vec<HashMap<String, Value>> = search_response
-                    .data
+                let papers: Vec<HashMap<String, Value>> = papers_raw
                     .iter()
                     .map(|paper| self.format_paper(paper))
                     .collect();
@@ -753,20 +875,26 @@ impl Connector for SemanticScholarConnector {
                 let args: GetPaperEdgesArgs = serde_json::from_value(json!(args)).map_err(|e| {
                     ConnectorError::InvalidParams(format!("Invalid arguments: {}", e))
                 })?;
-                let offset = args.offset.unwrap_or(0);
-                let payload = self
-                    .get_paper_edges(&args.paper_id, "citations", args.limit, offset)
-                    .await?;
+                let payload = if let Some(offset) = args.offset {
+                    self.get_paper_edges(&args.paper_id, "citations", args.limit, offset)
+                        .await?
+                } else {
+                    self.get_paper_edges_all(&args.paper_id, "citations", args.limit)
+                        .await?
+                };
                 Ok(structured_result_with_text(&payload, None)?)
             }
             "get_references" => {
                 let args: GetPaperEdgesArgs = serde_json::from_value(json!(args)).map_err(|e| {
                     ConnectorError::InvalidParams(format!("Invalid arguments: {}", e))
                 })?;
-                let offset = args.offset.unwrap_or(0);
-                let payload = self
-                    .get_paper_edges(&args.paper_id, "references", args.limit, offset)
-                    .await?;
+                let payload = if let Some(offset) = args.offset {
+                    self.get_paper_edges(&args.paper_id, "references", args.limit, offset)
+                        .await?
+                } else {
+                    self.get_paper_edges_all(&args.paper_id, "references", args.limit)
+                        .await?
+                };
                 Ok(structured_result_with_text(&payload, None)?)
             }
             _ => Err(ConnectorError::ToolNotFound),
@@ -815,5 +943,30 @@ impl Connector for SemanticScholarConnector {
                 name
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_search_url_with_filters() {
+        let args = SearchPapersArgs {
+            query: "rust async".to_string(),
+            limit: None,
+            page_size: 10,
+            page: 1,
+            sort: "relevance".to_string(),
+            year: Some("2020-2023".to_string()),
+            fields_of_study: Some(vec!["Computer Science".to_string()]),
+        };
+
+        let url = SemanticScholarConnector::build_search_url(&args, 10, 0).unwrap();
+        assert!(url.contains("query=rust%20async"));
+        assert!(url.contains("limit=10"));
+        assert!(url.contains("offset=0"));
+        assert!(url.contains("&year=2020-2023"));
+        assert!(url.contains("&fieldsOfStudy=Computer%20Science"));
     }
 }

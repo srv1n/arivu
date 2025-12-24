@@ -8,7 +8,7 @@ use crate::auth::AuthDetails;
 use crate::auth_store::{AuthStore, FileAuthStore};
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 #[allow(unused_imports)]
 use google_people1 as people1;
@@ -82,7 +82,7 @@ impl Connector for GooglePeopleConnector {
                 description: Some(Cow::Borrowed(
                     "List contacts (requires explicit user permission).",
                 )),
-                input_schema: Arc::new(json!({"type":"object","properties":{"page_size":{"type":"integer","minimum":1,"maximum":200},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":[]}).as_object().expect("Schema object").clone()),
+                input_schema: Arc::new(json!({"type":"object","properties":{"page_size":{"type":"integer","minimum":1,"maximum":200},"limit":{"type":"integer","minimum":1,"maximum":5000,"description":"Total contacts to return (default: page_size). Connector paginates internally."},"page_token":{"type":"string","description":"Optional cursor from a previous response (nextPageToken)."},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":[]}).as_object().expect("Schema object").clone()),
                 output_schema: None, annotations: None, icons: None
             },
             Tool {
@@ -105,6 +105,15 @@ impl Connector for GooglePeopleConnector {
         match req.name.as_ref() {
             "list_connections" => {
                 let page_size = args.get("page_size").and_then(|v| v.as_i64()).unwrap_or(50);
+                let desired_limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(page_size)
+                    .clamp(1, 5_000) as usize;
+                let start_token = args
+                    .get("page_token")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let store = FileAuthStore::new_default();
                 let auth = store
                     .load("google-people")
@@ -117,46 +126,83 @@ impl Connector for GooglePeopleConnector {
                 })?;
                 let client = crate::oauth_client::google_client::new_https_client();
                 let hub = people1::PeopleService::new(client, token.clone());
-                let mut call = hub.people().connections_list("people/me");
-                call = call.page_size(page_size.max(1) as i32).person_fields(
-                    people1::client::FieldMask::new(&["names", "emailAddresses"]),
-                );
-                let (_, cons) = call
-                    .doit()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("people error: {}", e)))?;
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let people = cons
-                        .connections
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|p| {
-                            let rn = p.resource_name.unwrap_or_default();
-                            let name = p
-                                .names
-                                .as_ref()
-                                .and_then(|ns| ns.first())
-                                .and_then(|n| n.display_name.clone())
-                                .unwrap_or_default();
-                            let email = p
-                                .email_addresses
-                                .as_ref()
-                                .and_then(|es| es.first())
-                                .and_then(|e| e.value.clone());
-                            serde_json::json!({"resourceName": rn, "name": name, "email": email})
-                        })
-                        .collect::<Vec<_>>();
-                    let v = serde_json::json!({"people": people, "nextPageToken": cons.next_page_token});
-                    structured_result_with_text(&v, None)
-                } else {
-                    let v = serde_json::to_value(&cons)
-                        .map_err(|e| ConnectorError::Other(format!("serde: {}", e)))?;
-                    structured_result_with_text(&v, None)
-                }
+
+                let page_size = page_size.clamp(1, 200) as usize;
+                let collected = collect_paginated_with_cursor(
+                    desired_limit,
+                    100,
+                    start_token,
+                    |cursor, remaining| {
+                        let hub = hub.clone();
+                        async move {
+                            let per_page = (remaining.min(page_size)).clamp(1, 200) as i32;
+                            let mut call = hub
+                                .people()
+                                .connections_list("people/me")
+                                .page_size(per_page)
+                                .person_fields(people1::client::FieldMask::new(&[
+                                    "names",
+                                    "emailAddresses",
+                                ]));
+                            if let Some(t) = cursor {
+                                call = call.page_token(&t);
+                            }
+                            let (_, cons) = call.doit().await.map_err(|e| {
+                                ConnectorError::Other(format!("people error: {}", e))
+                            })?;
+
+                            let items = cons
+                                .connections
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|p| {
+                                    if concise {
+                                        let rn = p.resource_name.unwrap_or_default();
+                                        let name = p
+                                            .names
+                                            .as_ref()
+                                            .and_then(|ns| ns.first())
+                                            .and_then(|n| n.display_name.clone())
+                                            .unwrap_or_default();
+                                        let email = p
+                                            .email_addresses
+                                            .as_ref()
+                                            .and_then(|es| es.first())
+                                            .and_then(|e| e.value.clone());
+                                        serde_json::json!({
+                                            "resourceName": rn,
+                                            "name": name,
+                                            "email": email
+                                        })
+                                    } else {
+                                        serde_json::to_value(&p).unwrap_or(json!({}))
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: cons.next_page_token,
+                            })
+                        }
+                    },
+                    |p: &serde_json::Value| {
+                        p.get("resourceName")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    },
+                )
+                .await?;
+
+                let v = serde_json::json!({
+                    "people": collected.items,
+                    "nextPageToken": collected.next_cursor
+                });
+                structured_result_with_text(&v, None)
             }
 
             "get_person" => {

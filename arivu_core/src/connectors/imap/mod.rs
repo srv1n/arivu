@@ -9,14 +9,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::task;
 use tracing::debug;
 
 use crate::auth::AuthDetails;
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 
 #[derive(Clone, Debug)]
@@ -198,15 +198,100 @@ impl ImapConnector {
         let mailbox = args
             .mailbox
             .unwrap_or_else(|| config.default_mailbox.clone());
-        let mut limit = args.limit.unwrap_or(config.fetch_limit);
-        if limit == 0 {
-            limit = config.fetch_limit;
-        }
-        limit = limit.clamp(1, 500);
-        let offset = args.offset.unwrap_or(0);
-        let before_uid = args.before_uid;
 
+        let mut desired = args.limit.unwrap_or(config.fetch_limit);
+        if desired == 0 {
+            desired = config.fetch_limit;
+        }
+        desired = desired.clamp(1, 5_000);
+
+        let start_cursor = Some(ImapFetchCursor {
+            before_uid: args.before_uid,
+            offset: args.offset.unwrap_or(0),
+        });
+
+        #[derive(Default)]
+        struct Meta {
+            total: Option<usize>,
+        }
+        let meta = Arc::new(Mutex::new(Meta::default()));
+        let mailbox_for_fetch = mailbox.clone();
+
+        let collected = collect_paginated_with_cursor(
+            desired,
+            20,
+            start_cursor,
+            |cursor, remaining| {
+                let meta = Arc::clone(&meta);
+                let mailbox_for_fetch = mailbox_for_fetch.clone();
+                async move {
+                    let cursor = cursor.unwrap_or(ImapFetchCursor {
+                        before_uid: None,
+                        offset: 0,
+                    });
+                    let per_page = remaining.clamp(1, 500);
+
+                    let page = self
+                        .fetch_messages_page(
+                            mailbox_for_fetch,
+                            per_page,
+                            cursor.offset,
+                            cursor.before_uid,
+                        )
+                        .await?;
+
+                    {
+                        let mut m = meta.lock().map_err(|_| {
+                            ConnectorError::Other("IMAP meta lock poisoned".to_string())
+                        })?;
+                        if m.total.is_none() {
+                            m.total = Some(page.total);
+                        }
+                    }
+
+                    Ok::<_, ConnectorError>(Page {
+                        items: page.messages,
+                        next_cursor: page.next_cursor.map(|u| ImapFetchCursor {
+                            before_uid: Some(u),
+                            offset: 0,
+                        }),
+                    })
+                }
+            },
+            |m: &MessageSummary| m.uid.map(|u| u.to_string()),
+        )
+        .await?;
+
+        let meta = Arc::try_unwrap(meta)
+            .ok()
+            .and_then(|m| m.into_inner().ok())
+            .unwrap_or_default();
+
+        let next_cursor = collected
+            .next_cursor
+            .and_then(|c| c.before_uid)
+            .filter(|u| *u > 0);
+
+        Ok(FetchMessagesResponse {
+            returned: collected.items.len(),
+            has_more: next_cursor.is_some(),
+            next_cursor,
+            messages: collected.items,
+            mailbox,
+            total: meta.total.unwrap_or(0),
+        })
+    }
+
+    async fn fetch_messages_page(
+        &self,
+        mailbox: String,
+        limit: usize,
+        offset: usize,
+        before_uid: Option<u32>,
+    ) -> Result<FetchMessagesResponse, ConnectorError> {
         let mailbox_clone = mailbox.clone();
+        let limit = limit.clamp(1, 500);
+
         self.with_session(move |session| {
             session.select(&mailbox_clone).map_err(map_imap_error)?;
             let mut uids: Vec<u32> = session
@@ -708,6 +793,12 @@ struct FetchMessagesResponse {
     next_cursor: Option<u32>,
 }
 
+#[derive(Debug, Clone)]
+struct ImapFetchCursor {
+    before_uid: Option<u32>,
+    offset: usize,
+}
+
 #[derive(Debug, Serialize)]
 struct MessageSummary {
     uid: Option<u32>,
@@ -950,7 +1041,7 @@ impl Connector for ImapConnector {
                         "type": "object",
                         "properties": {
                             "mailbox": { "type": "string", "description": "Mailbox name (defaults to INBOX)." },
-                            "limit": { "type": "integer", "description": "Maximum number of messages to return (default 50, max 500)." },
+	                            "limit": { "type": "integer", "description": "Maximum number of messages to return (default 50, max 5000). Connector paginates internally.", "minimum": 1, "maximum": 5000 },
                             "offset": { "type": "integer", "description": "Skip this many messages from the end for offset-based pagination." },
                             "before_uid": { "type": "integer", "description": "Only fetch messages with UID less than this value for cursor-based pagination. Use next_cursor from previous response." }
                         }

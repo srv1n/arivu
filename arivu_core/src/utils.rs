@@ -9,6 +9,8 @@ use rookie::safari;
 use rookie::{brave, chrome, common::enums::CookieToString, firefox};
 use serde::Serialize;
 use serde_json::{Map as JsonMap, Value as JsonValue};
+use std::collections::HashSet;
+use std::future::Future;
 use thiserror::Error;
 #[cfg(feature = "browser-cookies")]
 use url::Url;
@@ -232,6 +234,148 @@ pub fn clean_html_entities(text: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&")
+}
+
+pub struct Page<T, C> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<C>,
+}
+
+pub struct Collected<T, C> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<C>,
+}
+
+pub async fn collect_paginated_with_cursor<T, C, Fetch, Fut, KeyFn>(
+    desired: usize,
+    max_requests: usize,
+    mut cursor: Option<C>,
+    mut fetch: Fetch,
+    mut key_fn: KeyFn,
+) -> Result<Collected<T, C>, ConnectorError>
+where
+    Fetch: FnMut(Option<C>, usize) -> Fut,
+    Fut: Future<Output = Result<Page<T, C>, ConnectorError>>,
+    KeyFn: FnMut(&T) -> Option<String>,
+{
+    if desired == 0 {
+        return Ok(Collected {
+            items: Vec::new(),
+            next_cursor: cursor,
+        });
+    }
+
+    let mut out: Vec<T> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut requests: usize = 0;
+
+    while out.len() < desired && requests < max_requests {
+        let remaining = desired.saturating_sub(out.len());
+        if remaining == 0 {
+            break;
+        }
+
+        let page = fetch(cursor, remaining).await?;
+        cursor = page.next_cursor;
+
+        if page.items.is_empty() {
+            break;
+        }
+
+        for item in page.items {
+            if out.len() >= desired {
+                break;
+            }
+
+            if let Some(key) = key_fn(&item) {
+                if !seen.insert(key) {
+                    continue;
+                }
+            }
+
+            out.push(item);
+        }
+
+        requests = requests.saturating_add(1);
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    Ok(Collected {
+        items: out,
+        next_cursor: cursor,
+    })
+}
+
+pub async fn collect_paginated<T, C, Fetch, Fut, KeyFn>(
+    desired: usize,
+    max_requests: usize,
+    cursor: Option<C>,
+    fetch: Fetch,
+    key_fn: KeyFn,
+) -> Result<Vec<T>, ConnectorError>
+where
+    Fetch: FnMut(Option<C>, usize) -> Fut,
+    Fut: Future<Output = Result<Page<T, C>, ConnectorError>>,
+    KeyFn: FnMut(&T) -> Option<String>,
+{
+    Ok(
+        collect_paginated_with_cursor(desired, max_requests, cursor, fetch, key_fn)
+            .await?
+            .items,
+    )
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn collects_with_dedupe_and_cursor() {
+        #[derive(Debug)]
+        struct Item {
+            id: &'static str,
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let items = collect_paginated(
+            3,
+            10,
+            None::<usize>,
+            {
+                let calls = Arc::clone(&calls);
+                move |cursor, _remaining| {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    async move {
+                        let page = match cursor {
+                            None => Page {
+                                items: vec![Item { id: "a" }, Item { id: "b" }],
+                                next_cursor: Some(1),
+                            },
+                            Some(1) => Page {
+                                items: vec![Item { id: "b" }, Item { id: "c" }],
+                                next_cursor: None,
+                            },
+                            _ => Page {
+                                items: vec![],
+                                next_cursor: None,
+                            },
+                        };
+                        Ok::<_, ConnectorError>(page)
+                    }
+                }
+            },
+            |i: &Item| Some(i.id.to_string()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(items.len(), 3);
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
 }
 
 /// Clean a URL by removing tracking parameters and truncating if too long.

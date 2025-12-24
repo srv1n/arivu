@@ -9,10 +9,13 @@ use crate::auth::AuthDetails;
 use crate::auth_store::{AuthStore, FileAuthStore};
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 
 const SLACK_API_BASE: &str = "https://slack.com/api";
+const SLACK_MAX_PER_REQUEST: u32 = 200;
+const SLACK_MAX_TOTAL: u32 = 5_000;
+const SLACK_MAX_REQUESTS: usize = 100;
 
 #[derive(Clone)]
 pub struct SlackConnector {
@@ -290,6 +293,15 @@ fn parse_permalink(permalink: &str) -> Option<(String, String, Option<String>)> 
     None
 }
 
+fn slack_next_cursor(v: &Value) -> Option<String> {
+    v.get("response_metadata")
+        .and_then(|m| m.get("next_cursor"))
+        .and_then(|s| s.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 #[async_trait]
 impl Connector for SlackConnector {
     fn name(&self) -> &'static str {
@@ -359,35 +371,35 @@ impl Connector for SlackConnector {
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("list_channels"),
+	            Tool {
+	                name: Cow::Borrowed("list_channels"),
                 title: None,
                 description: Some(Cow::Borrowed("List channels/DMs the token can access.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "types": {"type":"string","description":"public_channel,private_channel,im,mpim"},
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200}
-                    }
-                }).as_object().expect("Schema object").clone()),
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000}
+	                    }
+	                }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("list_messages"),
+	            Tool {
+	                name: Cow::Borrowed("list_messages"),
                 title: None,
                 description: Some(Cow::Borrowed("List recent messages in a channel.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "channel":{"type":"string"},
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200},
-                        "oldest": {"type":"string"},
-                        "latest": {"type":"string"},
-                        "inclusive": {"type":"boolean"}
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000},
+	                        "oldest": {"type":"string"},
+	                        "latest": {"type":"string"},
+	                        "inclusive": {"type":"boolean"}
                     },
                     "required":["channel"]
                 }).as_object().expect("Schema object").clone()),
@@ -395,20 +407,20 @@ impl Connector for SlackConnector {
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("get_thread"),
+	            Tool {
+	                name: Cow::Borrowed("get_thread"),
                 title: None,
                 description: Some(Cow::Borrowed("Fetch a thread (root + replies) by channel and thread_ts.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "channel":{"type":"string"},
                         "thread_ts":{"type":"string"},
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200}
-                    },
-                    "required":["channel","thread_ts"]
-                }).as_object().expect("Schema object").clone()),
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000}
+	                    },
+	                    "required":["channel","thread_ts"]
+	                }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
@@ -432,11 +444,11 @@ impl Connector for SlackConnector {
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("list_files"),
+	            Tool {
+	                name: Cow::Borrowed("list_files"),
                 title: None,
                 description: Some(Cow::Borrowed("List files by channel/user/time window.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "channel":{"type":"string"},
@@ -444,41 +456,41 @@ impl Connector for SlackConnector {
                         "ts_from":{"type":"string"},
                         "ts_to":{"type":"string"},
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200}
-                    }
-                }).as_object().expect("Schema object").clone()),
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000}
+	                    }
+	                }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("get_thread_by_permalink"),
+	            Tool {
+	                name: Cow::Borrowed("get_thread_by_permalink"),
                 title: None,
                 description: Some(Cow::Borrowed("Resolve a Slack message permalink and fetch the thread (root + replies). If the link is a reply, uses thread_ts when present.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "permalink": {"type":"string"},
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200}
-                    },
-                    "required":["permalink"]
-                }).as_object().expect("Schema object").clone()),
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000}
+	                    },
+	                    "required":["permalink"]
+	                }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
             },
-            Tool {
-                name: Cow::Borrowed("list_users"),
+	            Tool {
+	                name: Cow::Borrowed("list_users"),
                 title: None,
                 description: Some(Cow::Borrowed("List workspace users the token can see.")),
-                input_schema: Arc::new(json!({
+	                input_schema: Arc::new(json!({
                     "type":"object",
                     "properties":{
                         "cursor": {"type":"string"},
-                        "limit": {"type":"integer","minimum":1,"maximum":200}
-                    }
-                }).as_object().expect("Schema object").clone()),
+	                        "limit": {"type":"integer","minimum":1,"maximum":5000}
+	                    }
+	                }).as_object().expect("Schema object").clone()),
                 output_schema: None,
                 annotations: None,
                 icons: None,
@@ -507,63 +519,155 @@ impl Connector for SlackConnector {
             "list_channels" => {
                 let input: ListChannelsInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
-                let mut params = vec![("types", input.types)];
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                let v = self.api_get("conversations.list", &params).await?;
-                // Normalize
+
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
+                let types = input.types.clone();
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| {
+                        let types = types.clone();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                            let mut params =
+                                vec![("types", types), ("limit", per_page.to_string())];
+                            if let Some(c) = cursor {
+                                params.push(("cursor", c));
+                            }
+                            let v = self.api_get("conversations.list", &params).await?;
+                            let items = v
+                                .get("channels")
+                                .and_then(|x| x.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: slack_next_cursor(&v),
+                            })
+                        }
+                    },
+                    |c: &Value| c.get("id").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "channels": v.get("channels").cloned().unwrap_or(json!([])),
-                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                    "channels": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }
             "list_messages" => {
                 let input: ListMessagesInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
-                let mut params = vec![("channel", input.channel)];
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                if let Some(o) = input.oldest {
-                    params.push(("oldest", o));
-                }
-                if let Some(latest) = input.latest {
-                    params.push(("latest", latest));
-                }
-                if let Some(inc) = input.inclusive {
-                    params.push(("inclusive", (inc as u8).to_string()));
-                }
-                let v = self.api_get("conversations.history", &params).await?;
+
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
+                let channel = input.channel.clone();
+                let oldest = input.oldest.clone();
+                let latest = input.latest.clone();
+                let inclusive = input.inclusive;
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| {
+                        let channel = channel.clone();
+                        let oldest = oldest.clone();
+                        let latest = latest.clone();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                            let mut params =
+                                vec![("channel", channel), ("limit", per_page.to_string())];
+                            if let Some(c) = cursor {
+                                params.push(("cursor", c));
+                            }
+                            if let Some(o) = oldest {
+                                params.push(("oldest", o));
+                            }
+                            if let Some(l) = latest {
+                                params.push(("latest", l));
+                            }
+                            if let Some(inc) = inclusive {
+                                params.push(("inclusive", (inc as u8).to_string()));
+                            }
+
+                            let v = self.api_get("conversations.history", &params).await?;
+                            let items = v
+                                .get("messages")
+                                .and_then(|x| x.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: slack_next_cursor(&v),
+                            })
+                        }
+                    },
+                    |m: &Value| m.get("ts").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "messages": v.get("messages").cloned().unwrap_or(json!([])),
-                    "has_more": v.get("has_more").cloned().unwrap_or(json!(false)),
-                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                    "messages": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }
             "get_thread" => {
                 let input: GetThreadInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
-                let mut params = vec![("channel", input.channel), ("ts", input.thread_ts)];
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                let v = self.api_get("conversations.replies", &params).await?;
+
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
+                let channel = input.channel.clone();
+                let ts = input.thread_ts.clone();
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| {
+                        let channel = channel.clone();
+                        let ts = ts.clone();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                            let mut params = vec![
+                                ("channel", channel),
+                                ("ts", ts),
+                                ("limit", per_page.to_string()),
+                            ];
+                            if let Some(c) = cursor {
+                                params.push(("cursor", c));
+                            }
+                            let v = self.api_get("conversations.replies", &params).await?;
+                            let items = v
+                                .get("messages")
+                                .and_then(|x| x.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: slack_next_cursor(&v),
+                            })
+                        }
+                    },
+                    |m: &Value| m.get("ts").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "messages": v.get("messages").cloned().unwrap_or(json!([])),
-                    "has_more": v.get("has_more").cloned().unwrap_or(json!(false)),
-                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                    "messages": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }
@@ -593,29 +697,64 @@ impl Connector for SlackConnector {
             "list_files" => {
                 let input: ListFilesInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
-                let mut params: Vec<(&str, String)> = vec![];
-                if let Some(ch) = input.channel {
-                    params.push(("channel", ch));
-                }
-                if let Some(u) = input.user {
-                    params.push(("user", u));
-                }
-                if let Some(f) = input.ts_from {
-                    params.push(("ts_from", f));
-                }
-                if let Some(t) = input.ts_to {
-                    params.push(("ts_to", t));
-                }
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                let v = self.api_get("files.list", &params).await?;
+
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
+                let channel = input.channel.clone();
+                let user = input.user.clone();
+                let ts_from = input.ts_from.clone();
+                let ts_to = input.ts_to.clone();
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| {
+                        let channel = channel.clone();
+                        let user = user.clone();
+                        let ts_from = ts_from.clone();
+                        let ts_to = ts_to.clone();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                            let mut params: Vec<(&str, String)> =
+                                vec![("limit", per_page.to_string())];
+                            if let Some(ch) = channel {
+                                params.push(("channel", ch));
+                            }
+                            if let Some(u) = user {
+                                params.push(("user", u));
+                            }
+                            if let Some(f) = ts_from {
+                                params.push(("ts_from", f));
+                            }
+                            if let Some(t) = ts_to {
+                                params.push(("ts_to", t));
+                            }
+                            if let Some(c) = cursor {
+                                params.push(("cursor", c));
+                            }
+
+                            let v = self.api_get("files.list", &params).await?;
+                            let items = v
+                                .get("files")
+                                .and_then(|x| x.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: slack_next_cursor(&v),
+                            })
+                        }
+                    },
+                    |f: &Value| f.get("id").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "files": v.get("files").cloned().unwrap_or(json!([])),
-                    "paging": v.get("paging").cloned().or_else(|| v.get("response_metadata").cloned()).unwrap_or(json!({}))
+                    "files": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }
@@ -627,36 +766,90 @@ impl Connector for SlackConnector {
                     .ok_or_else(|| {
                         ConnectorError::InvalidInput("Could not parse Slack permalink".to_string())
                     })?;
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
                 let parent_ts = thread_ts_opt.unwrap_or(msg_ts);
-                let mut params = vec![("channel", channel), ("ts", parent_ts)];
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                let v = self.api_get("conversations.replies", &params).await?;
+                let channel_id = channel.clone();
+                let ts = parent_ts.clone();
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| {
+                        let channel_id = channel_id.clone();
+                        let ts = ts.clone();
+                        async move {
+                            let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                            let mut params = vec![
+                                ("channel", channel_id),
+                                ("ts", ts),
+                                ("limit", per_page.to_string()),
+                            ];
+                            if let Some(c) = cursor {
+                                params.push(("cursor", c));
+                            }
+                            let v = self.api_get("conversations.replies", &params).await?;
+                            let items = v
+                                .get("messages")
+                                .and_then(|x| x.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            Ok::<_, ConnectorError>(Page {
+                                items,
+                                next_cursor: slack_next_cursor(&v),
+                            })
+                        }
+                    },
+                    |m: &Value| m.get("ts").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "messages": v.get("messages").cloned().unwrap_or(json!([])),
-                    "has_more": v.get("has_more").cloned().unwrap_or(json!(false)),
-                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                    "messages": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }
             "list_users" => {
                 let input: ListUsersInput = serde_json::from_value(Value::Object(args_map))
                     .map_err(|e| ConnectorError::InvalidParams(e.to_string()))?;
-                let mut params: Vec<(&str, String)> = vec![];
-                if let Some(c) = input.cursor {
-                    params.push(("cursor", c));
-                }
-                if let Some(l) = input.limit {
-                    params.push(("limit", l.to_string()));
-                }
-                let v = self.api_get("users.list", &params).await?;
+
+                let desired = input
+                    .limit
+                    .unwrap_or(SLACK_MAX_PER_REQUEST)
+                    .clamp(1, SLACK_MAX_TOTAL) as usize;
+
+                let collected = collect_paginated_with_cursor(
+                    desired,
+                    SLACK_MAX_REQUESTS,
+                    input.cursor,
+                    |cursor, remaining| async move {
+                        let per_page = (remaining as u32).clamp(1, SLACK_MAX_PER_REQUEST);
+                        let mut params: Vec<(&str, String)> = vec![("limit", per_page.to_string())];
+                        if let Some(c) = cursor {
+                            params.push(("cursor", c));
+                        }
+                        let v = self.api_get("users.list", &params).await?;
+                        let items = v
+                            .get("members")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        Ok::<_, ConnectorError>(Page {
+                            items,
+                            next_cursor: slack_next_cursor(&v),
+                        })
+                    },
+                    |m: &Value| m.get("id").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
                 let out = json!({
-                    "members": v.get("members").cloned().unwrap_or(json!([])),
-                    "response_metadata": v.get("response_metadata").cloned().unwrap_or(json!({}))
+                    "members": collected.items,
+                    "response_metadata": collected.next_cursor.map(|c| json!({"next_cursor": c})).unwrap_or(json!({}))
                 });
                 structured_result_with_text(&out, None)
             }

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.13] - 2025-12-24
+
+### Changed
+- Added a shared pagination helper (`collect_paginated*`) and adopted it across multiple connectors to support higher limits, cursor-based pagination, and de-duplication.
+- Improved pagination behavior and limits for connectors that fetch large lists (e.g., Reddit search and Slack/Drive listing) to reduce “first page only” surprises.
+
 ## [0.2.12] - 2025-12-22
 
 ### Changed
@@ -139,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.13...HEAD
+[0.2.13]: https://github.com/srv1n/arivu/releases/tag/v0.2.13
 [0.2.12]: https://github.com/srv1n/arivu/releases/tag/v0.2.12
 [0.2.11]: https://github.com/srv1n/arivu/releases/tag/v0.2.11
 [0.2.10]: https://github.com/srv1n/arivu/releases/tag/v0.2.10

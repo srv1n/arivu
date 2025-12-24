@@ -13,7 +13,7 @@ use yup_oauth2 as oauth2;
 use crate::auth::AuthDetails;
 use crate::capabilities::{ConnectorConfigSchema, Field, FieldType};
 use crate::error::ConnectorError;
-use crate::utils::structured_result_with_text;
+use crate::utils::{collect_paginated_with_cursor, structured_result_with_text, Page};
 use crate::Connector;
 use crate::{
     auth_store::{AuthStore, FileAuthStore},
@@ -92,7 +92,7 @@ impl Connector for DriveConnector {
         _request: Option<PaginatedRequestParam>,
     ) -> Result<ListToolsResult, ConnectorError> {
         let mut tools: Vec<Tool> = Vec::new();
-        tools.push(Tool { name: Cow::Borrowed("list_files"), title: None, description: Some(Cow::Borrowed("List Drive files (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"q":{"type":"string","description":"Drive query string"},"page_size":{"type":"integer","minimum":1,"maximum":100},"response_format":{"type":"string","enum":["concise","detailed"],"description":"Default concise."}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
+        tools.push(Tool { name: Cow::Borrowed("list_files"), title: None, description: Some(Cow::Borrowed("List Drive files (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"q":{"type":"string","description":"Drive query string"},"page_size":{"type":"integer","minimum":1,"maximum":100},"limit":{"type":"integer","minimum":1,"maximum":5000,"description":"Total number of files to return (default: page_size). Connector paginates internally."},"page_token":{"type":"string","description":"Optional cursor from a previous response (nextPageToken)."},"response_format":{"type":"string","enum":["concise","detailed"],"description":"Default concise."}},"required":[]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
         tools.push(Tool { name: Cow::Borrowed("get_file"), title: None, description: Some(Cow::Borrowed("Get file metadata (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"file_id":{"type":"string"},"response_format":{"type":"string","enum":["concise","detailed"]}},"required":["file_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
         tools.push(Tool { name: Cow::Borrowed("download_file"), title: None, description: Some(Cow::Borrowed("Download file content (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"file_id":{"type":"string"},"max_bytes":{"type":"integer","description":"Optional cap to avoid huge responses"}},"required":["file_id"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
         tools.push(Tool { name: Cow::Borrowed("export_file"), title: None, description: Some(Cow::Borrowed("Export Docs/Sheets/Slides (requires explicit user permission).")), input_schema: Arc::new(serde_json::json!({"type":"object","properties":{"file_id":{"type":"string"},"mime_type":{"type":"string","description":"Target MIME type"}},"required":["file_id","mime_type"]}).as_object().expect("Schema object").clone()), output_schema: None, annotations: None, icons: None });
@@ -198,6 +198,15 @@ impl Connector for DriveConnector {
             "list_files" => {
                 let q = args.get("q").and_then(|v| v.as_str()).unwrap_or("");
                 let page_size = args.get("page_size").and_then(|v| v.as_i64()).unwrap_or(25);
+                let desired_limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(page_size)
+                    .clamp(1, 5_000) as usize;
+                let start_token = args
+                    .get("page_token")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let store = FileAuthStore::new_default();
                 let auth = store
                     .load(self.name())
@@ -211,51 +220,74 @@ impl Connector for DriveConnector {
 
                 let client = crate::oauth_client::google_client::new_https_client();
                 let hub = drive3::DriveHub::new(client, token.clone());
-                let call = hub
-                    .files()
-                    .list()
-                    .q(q)
-                    .page_size((page_size.max(1)) as i32)
-                    .param(
-                        "fields",
-                        "files(id,name,mimeType,modifiedTime,size),nextPageToken",
-                    );
-                let (_, file_list) = call
-                    .doit()
-                    .await
-                    .map_err(|e| ConnectorError::Other(format!("drive error: {}", e)))?;
                 let concise = !matches!(
                     args.get("response_format").and_then(|v| v.as_str()),
                     Some("detailed")
                 );
-                if concise {
-                    let files = file_list
-                        .files
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|f| {
-                            serde_json::json!({
-                                "id": f.id.unwrap_or_default(),
-                                "name": f.name.unwrap_or_default(),
-                                "mime_type": f.mime_type.unwrap_or_default(),
-                                "size": f.size,
-                                "modified_time": f.modified_time.map(|dt| dt.to_rfc3339()),
+
+                let page_size = page_size.clamp(1, 100) as usize;
+                let collected = collect_paginated_with_cursor(
+                    desired_limit,
+                    100,
+                    start_token,
+                    |cursor, remaining| {
+                        let hub = hub.clone();
+                        let q = q.to_string();
+                        async move {
+                            let per_page = (remaining.min(page_size)).clamp(1, 100) as i32;
+                            let mut call = hub
+                                .files()
+                                .list()
+                                .q(&q)
+                                .page_size(per_page)
+                                .param(
+                                    "fields",
+                                    "files(id,name,mimeType,modifiedTime,size),nextPageToken",
+                                );
+                            if let Some(t) = cursor {
+                                call = call.param("pageToken", &t);
+                            }
+                            let (_, file_list) = call.doit().await.map_err(|e| {
+                                ConnectorError::Other(format!("drive error: {}", e))
+                            })?;
+
+                            let files = file_list
+                                .files
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|f| {
+                                    if concise {
+                                        serde_json::json!({
+                                            "id": f.id.unwrap_or_default(),
+                                            "name": f.name.unwrap_or_default(),
+                                            "mime_type": f.mime_type.unwrap_or_default(),
+                                            "size": f.size,
+                                            "modified_time": f.modified_time.map(|dt| dt.to_rfc3339()),
+                                        })
+                                    } else {
+                                        serde_json::to_value(&f).unwrap_or(json!({}))
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            Ok::<_, ConnectorError>(Page {
+                                items: files,
+                                next_cursor: file_list.next_page_token,
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    let v = serde_json::json!({"files": files, "nextPageToken": file_list.next_page_token});
-                    structured_result_with_text(
-                        &v,
-                        Some(format!(
-                            "{} files",
-                            v["files"].as_array().map(|a| a.len()).unwrap_or(0)
-                        )),
-                    )
-                } else {
-                    let v = serde_json::to_value(&file_list)
-                        .map_err(|e| ConnectorError::Other(format!("serde: {}", e)))?;
-                    structured_result_with_text(&v, None)
-                }
+                        }
+                    },
+                    |f: &serde_json::Value| f.get("id").and_then(|v| v.as_str()).map(str::to_string),
+                )
+                .await?;
+
+                let v = serde_json::json!({"files": collected.items, "nextPageToken": collected.next_cursor});
+                structured_result_with_text(
+                    &v,
+                    Some(format!(
+                        "{} files",
+                        v["files"].as_array().map(|a| a.len()).unwrap_or(0)
+                    )),
+                )
             }
             "get_file" => {
                 let file_id = args.get("file_id").and_then(|v| v.as_str()).ok_or(

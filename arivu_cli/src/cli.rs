@@ -1532,14 +1532,14 @@ pub enum YoutubeTools {
     /// List recent uploads from a channel or playlist
     #[command(name = "list", alias = "recent")]
     List {
-        /// Channel ID/URL/handle (e.g., UC..., https://youtube.com/@hubermanlab, @hubermanlab)
+        /// Channel ID/URL/handle (e.g., UC..., <https://youtube.com/@hubermanlab>, @hubermanlab)
         #[arg(
             long,
             conflicts_with = "playlist",
             required_unless_present = "playlist"
         )]
         channel: Option<String>,
-        /// Playlist ID/URL (e.g., PL..., https://youtube.com/playlist?list=PL...)
+        /// Playlist ID/URL (e.g., PL..., <https://youtube.com/playlist?list=PL>...)
         #[arg(long, conflicts_with = "channel", required_unless_present = "channel")]
         playlist: Option<String>,
         /// Maximum number of videos to return
