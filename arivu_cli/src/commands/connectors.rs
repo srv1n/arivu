@@ -654,14 +654,23 @@ pub async fn handle_google_calendar(cli: &Cli, tool: GoogleCalendarTools) -> Res
     let (tool_name, args) = match tool {
         GoogleCalendarTools::ListEvents {
             max_results,
+            page_token,
             time_min,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("max_results".to_string(), json!(max_results));
+            if let Some(t) = page_token {
+                args.insert("page_token".to_string(), json!(t));
+            }
             if let Some(time) = time_min {
                 args.insert("time_min".to_string(), json!(time));
             }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("list_events", args)
         }
@@ -722,6 +731,8 @@ pub async fn handle_google_drive(cli: &Cli, tool: GoogleDriveTools) -> Result<()
         GoogleDriveTools::ListFiles {
             q,
             page_size,
+            limit,
+            page_token,
             response_format,
         } => {
             let mut args = Map::new();
@@ -729,6 +740,17 @@ pub async fn handle_google_drive(cli: &Cli, tool: GoogleDriveTools) -> Result<()
                 args.insert("q".to_string(), json!(query));
             }
             args.insert("page_size".to_string(), json!(page_size));
+            if let Some(l) = limit {
+                args.insert("limit".to_string(), json!(l));
+            }
+            if let Some(t) = page_token {
+                args.insert("page_token".to_string(), json!(t));
+            }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("list_files", args)
         }
@@ -738,6 +760,11 @@ pub async fn handle_google_drive(cli: &Cli, tool: GoogleDriveTools) -> Result<()
         } => {
             let mut args = Map::new();
             args.insert("file_id".to_string(), json!(file_id));
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("get_file", args)
         }
@@ -798,6 +825,7 @@ pub async fn handle_google_gmail(cli: &Cli, tool: GoogleGmailTools) -> Result<()
         GoogleGmailTools::ListMessages {
             q,
             max_results,
+            page_token,
             response_format,
         } => {
             let mut args = Map::new();
@@ -805,6 +833,14 @@ pub async fn handle_google_gmail(cli: &Cli, tool: GoogleGmailTools) -> Result<()
                 args.insert("q".to_string(), json!(query));
             }
             args.insert("max_results".to_string(), json!(max_results));
+            if let Some(t) = page_token {
+                args.insert("page_token".to_string(), json!(t));
+            }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("list_messages", args)
         }
@@ -821,6 +857,11 @@ pub async fn handle_google_gmail(cli: &Cli, tool: GoogleGmailTools) -> Result<()
             let mut args = Map::new();
             args.insert("id".to_string(), json!(id));
             args.insert("format".to_string(), json!(format));
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("get_message", args)
         }
@@ -839,10 +880,23 @@ pub async fn handle_google_people(cli: &Cli, tool: GooglePeopleTools) -> Result<
     let (tool_name, args) = match tool {
         GooglePeopleTools::ListConnections {
             page_size,
+            limit,
+            page_token,
             response_format,
         } => {
             let mut args = Map::new();
             args.insert("page_size".to_string(), json!(page_size));
+            if let Some(l) = limit {
+                args.insert("limit".to_string(), json!(l));
+            }
+            if let Some(t) = page_token {
+                args.insert("page_token".to_string(), json!(t));
+            }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("list_connections", args)
         }
@@ -856,6 +910,11 @@ pub async fn handle_google_people(cli: &Cli, tool: GooglePeopleTools) -> Result<
             if let Some(fields) = person_fields {
                 args.insert("person_fields".to_string(), json!(fields));
             }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             args.insert("response_format".to_string(), json!(response_format));
             ("get_person", args)
         }
@@ -938,12 +997,19 @@ pub async fn handle_microsoft_graph(cli: &Cli, tool: MicrosoftGraphTools) -> Res
     let (tool_name, args) = match tool {
         MicrosoftGraphTools::ListMessages {
             top,
+            next_link,
             response_format,
         } => {
             let mut args = Map::new();
-            if top != 20 {
-                args.insert("top".to_string(), json!(top));
+            args.insert("top".to_string(), json!(top));
+            if let Some(nl) = next_link {
+                args.insert("next_link".to_string(), json!(nl));
             }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             if response_format != "concise" {
                 args.insert("response_format".to_string(), json!(response_format));
             }
@@ -951,12 +1017,25 @@ pub async fn handle_microsoft_graph(cli: &Cli, tool: MicrosoftGraphTools) -> Res
         }
         MicrosoftGraphTools::ListEvents {
             days_ahead,
+            limit,
+            next_link,
             response_format,
         } => {
             let mut args = Map::new();
             if days_ahead != 7 {
                 args.insert("days_ahead".to_string(), json!(days_ahead));
             }
+            if limit != 25 {
+                args.insert("limit".to_string(), json!(limit));
+            }
+            if let Some(nl) = next_link {
+                args.insert("next_link".to_string(), json!(nl));
+            }
+            let response_format = if response_format == "full" {
+                "detailed".to_string()
+            } else {
+                response_format
+            };
             if response_format != "concise" {
                 args.insert("response_format".to_string(), json!(response_format));
             }
@@ -1075,19 +1154,30 @@ pub async fn handle_imap(cli: &Cli, tool: ImapTools) -> Result<()> {
             }
             ("list_mailboxes", args)
         }
-        ImapTools::FetchMessages { mailbox, limit } => {
+        ImapTools::FetchMessages {
+            mailbox,
+            limit,
+            offset,
+            before_uid,
+        } => {
             let mut args = Map::new();
             if let Some(m) = mailbox {
                 args.insert("mailbox".to_string(), json!(m));
             }
-            if limit != 20 {
-                args.insert("limit".to_string(), json!(limit));
+            args.insert("limit".to_string(), json!(limit));
+            if let Some(o) = offset {
+                args.insert("offset".to_string(), json!(o));
+            }
+            if let Some(b) = before_uid {
+                args.insert("before_uid".to_string(), json!(b));
             }
             ("fetch_messages", args)
         }
         ImapTools::GetMessage {
             mailbox,
             uid,
+            include_headers,
+            include_html,
             include_raw,
         } => {
             let mut args = Map::new();
@@ -1095,6 +1185,12 @@ pub async fn handle_imap(cli: &Cli, tool: ImapTools) -> Result<()> {
                 args.insert("mailbox".to_string(), json!(m));
             }
             args.insert("uid".to_string(), json!(uid));
+            if include_headers {
+                args.insert("include_headers".to_string(), json!(include_headers));
+            }
+            if include_html {
+                args.insert("include_html".to_string(), json!(include_html));
+            }
             if include_raw {
                 args.insert("include_raw".to_string(), json!(include_raw));
             }
@@ -1110,9 +1206,7 @@ pub async fn handle_imap(cli: &Cli, tool: ImapTools) -> Result<()> {
                 args.insert("mailbox".to_string(), json!(m));
             }
             args.insert("query".to_string(), json!(query));
-            if limit != 50 {
-                args.insert("limit".to_string(), json!(limit));
-            }
+            args.insert("limit".to_string(), json!(limit));
             ("search", args)
         }
     };
@@ -1501,7 +1595,11 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
             args.insert("time".to_string(), json!(time));
             ("list", args)
         }
-        RedditTools::Post { id } => {
+        RedditTools::Post {
+            id,
+            comment_limit,
+            comment_sort,
+        } => {
             let mut args = Map::new();
             let post_url = if id.starts_with("http://") || id.starts_with("https://") {
                 id
@@ -1509,6 +1607,10 @@ pub async fn handle_reddit(cli: &Cli, tool: RedditTools) -> Result<()> {
                 format!("https://www.reddit.com/comments/{}", id)
             };
             args.insert("post_url".to_string(), json!(post_url));
+            args.insert("comment_limit".to_string(), json!(comment_limit));
+            if comment_sort != "best" {
+                args.insert("comment_sort".to_string(), json!(comment_sort));
+            }
             ("get", args)
         }
     };
@@ -1635,26 +1737,52 @@ pub async fn handle_semantic_scholar(cli: &Cli, tool: SemanticScholarTools) -> R
 /// Handle slack commands
 pub async fn handle_slack(cli: &Cli, tool: SlackTools) -> Result<()> {
     let (tool_name, args) = match tool {
-        SlackTools::Channels { limit } => {
+        SlackTools::Channels { limit, cursor } => {
             let mut args = Map::new();
             args.insert("limit".to_string(), json!(limit));
+            if let Some(c) = cursor {
+                args.insert("cursor".to_string(), json!(c));
+            }
             ("list_channels", args)
         }
-        SlackTools::Messages { channel, limit } => {
+        SlackTools::Messages {
+            channel,
+            limit,
+            cursor,
+        } => {
             let mut args = Map::new();
             args.insert("channel".to_string(), json!(channel));
             args.insert("limit".to_string(), json!(limit));
+            if let Some(c) = cursor {
+                args.insert("cursor".to_string(), json!(c));
+            }
             ("list_messages", args)
         }
-        SlackTools::Search { query, limit } => {
+        SlackTools::Search {
+            query,
+            limit,
+            page,
+            sort,
+            sort_dir,
+        } => {
             let mut args = Map::new();
             args.insert("query".to_string(), json!(query));
             args.insert("count".to_string(), json!(limit));
+            args.insert("page".to_string(), json!(page));
+            if let Some(s) = sort {
+                args.insert("sort".to_string(), json!(s));
+            }
+            if let Some(sd) = sort_dir {
+                args.insert("sort_dir".to_string(), json!(sd));
+            }
             ("search_messages", args)
         }
-        SlackTools::Users { limit } => {
+        SlackTools::Users { limit, cursor } => {
             let mut args = Map::new();
             args.insert("limit".to_string(), json!(limit));
+            if let Some(c) = cursor {
+                args.insert("cursor".to_string(), json!(c));
+            }
             ("list_users", args)
         }
     };

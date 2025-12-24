@@ -508,7 +508,8 @@ pub enum Commands {
     #[command(name = "reddit")]
     #[command(after_help = "\x1b[1;33mExamples:\x1b[0m
   arivu reddit search --query \"rust\" --subreddit programming
-  arivu reddit hot --subreddit rust --limit 20")]
+  arivu reddit hot --subreddit rust --limit 20
+  arivu reddit post --id https://www.reddit.com/comments/abc123 --comment-limit 200 --comment-sort top")]
     Reddit {
         #[command(subcommand)]
         tool: RedditTools,
@@ -943,13 +944,21 @@ pub enum GoogleCalendarTools {
     /// List upcoming events from primary calendar
     #[command(name = "list-events", alias = "events")]
     ListEvents {
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        /// Total number of events to return (1-5000). Connector paginates internally.
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         max_results: u32,
+        /// Optional cursor from a previous response (nextPageToken)
+        #[arg(long)]
+        page_token: Option<String>,
         /// Minimum time (RFC3339 format)
         #[arg(long)]
         time_min: Option<String>,
-        /// Response format (concise or full)
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -974,8 +983,13 @@ pub enum GoogleCalendarTools {
         /// Sync token from previous sync
         #[arg(long, short)]
         sync_token: String,
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        /// Maximum number of results (1-250)
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=250)
+        )]
         max_results: u32,
     },
 
@@ -1014,10 +1028,21 @@ pub enum GoogleDriveTools {
         /// Drive query string
         #[arg(long, short)]
         q: Option<String>,
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        /// Page size per request (1-100)
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=100)
+        )]
         page_size: u32,
-        /// Response format (concise or full)
+        /// Total number of files to return (1-5000). Defaults to page_size if omitted.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=5000))]
+        limit: Option<u32>,
+        /// Optional cursor from a previous response (nextPageToken)
+        #[arg(long)]
+        page_token: Option<String>,
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1028,7 +1053,7 @@ pub enum GoogleDriveTools {
         /// File ID
         #[arg(long, short)]
         file_id: String,
-        /// Response format (concise or full)
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1099,10 +1124,18 @@ pub enum GoogleGmailTools {
         /// Gmail query string
         #[arg(long, short)]
         q: Option<String>,
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        /// Total number of results to return (1-5000). Connector paginates internally.
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         max_results: u32,
-        /// Response format (concise or full)
+        /// Optional cursor from a previous response (nextPageToken)
+        #[arg(long)]
+        page_token: Option<String>,
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1124,7 +1157,7 @@ pub enum GoogleGmailTools {
         /// Format (raw, full, metadata)
         #[arg(long, short, default_value = "full")]
         format: String,
-        /// Response format (concise or full)
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1144,10 +1177,21 @@ pub enum GooglePeopleTools {
     /// List contacts
     #[command(name = "list-connections", alias = "list")]
     ListConnections {
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        /// Page size per request (1-200)
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=200)
+        )]
         page_size: u32,
-        /// Response format (concise or full)
+        /// Total number of contacts to return (1-5000). Defaults to page_size if omitted.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=5000))]
+        limit: Option<u32>,
+        /// Optional cursor from a previous response (nextPageToken)
+        #[arg(long)]
+        page_token: Option<String>,
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1161,7 +1205,7 @@ pub enum GooglePeopleTools {
         /// Comma-separated person fields (e.g., names,emailAddresses,phoneNumbers)
         #[arg(long, short)]
         person_fields: Option<String>,
-        /// Response format (concise or full)
+        /// Response format (concise or detailed)
         #[arg(long, default_value = "concise")]
         response_format: String,
     },
@@ -1253,9 +1297,17 @@ pub enum MicrosoftGraphTools {
     /// List recent Outlook messages
     #[command(name = "list-messages", alias = "messages")]
     ListMessages {
-        /// Maximum messages (1-50)
-        #[arg(long, short, default_value_t = 20)]
+        /// Total messages to return (1-5000). Connector paginates internally.
+        #[arg(
+            long,
+            short,
+            default_value_t = 20,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         top: u32,
+        /// Optional cursor from a previous response (@odata.nextLink)
+        #[arg(long)]
+        next_link: Option<String>,
         /// Response format: concise or detailed
         #[arg(long, default_value = "concise")]
         response_format: String,
@@ -1265,8 +1317,23 @@ pub enum MicrosoftGraphTools {
     #[command(name = "list-events", alias = "events")]
     ListEvents {
         /// Window in days
-        #[arg(long, short, default_value_t = 7)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 7,
+            value_parser = clap::value_parser!(u32).range(1..=30)
+        )]
         days_ahead: u32,
+        /// Total events to return (1-5000). Connector paginates internally.
+        #[arg(
+            long,
+            default_value_t = 25,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
+        limit: u32,
+        /// Optional cursor from a previous response (@odata.nextLink)
+        #[arg(long)]
+        next_link: Option<String>,
         /// Response format: concise or detailed
         #[arg(long, default_value = "concise")]
         response_format: String,
@@ -1402,9 +1469,20 @@ pub enum ImapTools {
         /// Mailbox name
         #[arg(long, short)]
         mailbox: Option<String>,
-        /// Maximum number of messages
-        #[arg(long, short, default_value_t = 20)]
+        /// Total number of messages to return (1-5000). Connector paginates internally.
+        #[arg(
+            long,
+            short,
+            default_value_t = 20,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
+        /// Skip this many messages from the end (offset-based pagination)
+        #[arg(long)]
+        offset: Option<u32>,
+        /// Only fetch messages with UID less than this (cursor-based pagination)
+        #[arg(long)]
+        before_uid: Option<u32>,
     },
 
     /// Get a full message by UID
@@ -1416,6 +1494,12 @@ pub enum ImapTools {
         /// Message UID
         #[arg(long, short)]
         uid: u32,
+        /// Include email headers
+        #[arg(long)]
+        include_headers: bool,
+        /// Include original HTML body
+        #[arg(long)]
+        include_html: bool,
         /// Include base64 encoded raw message
         #[arg(long)]
         include_raw: bool,
@@ -1431,7 +1515,12 @@ pub enum ImapTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of UIDs to return
-        #[arg(long, short, default_value_t = 50)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 50,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 }
@@ -1816,7 +1905,12 @@ pub enum RedditTools {
         #[arg(long, default_value = "all")]
         time: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 25)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 25,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1827,7 +1921,12 @@ pub enum RedditTools {
         #[arg(long, short)]
         subreddit: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 25)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 25,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1838,7 +1937,12 @@ pub enum RedditTools {
         #[arg(long, short)]
         subreddit: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 25)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 25,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1852,7 +1956,12 @@ pub enum RedditTools {
         #[arg(long, short, default_value = "day")]
         time: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 25)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 25,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1862,6 +1971,12 @@ pub enum RedditTools {
         /// Post ID or URL
         #[arg(long, short)]
         id: String,
+        /// Maximum number of comments to fetch (0-5000). Set to 0 to skip comments.
+        #[arg(long, default_value_t = 25, value_parser = clap::value_parser!(u32).range(0..=5000))]
+        comment_limit: u32,
+        /// Comment sort order: best, top, new, controversial, old, qa
+        #[arg(long, default_value = "best", value_parser = ["best", "top", "new", "controversial", "old", "qa"])]
+        comment_sort: String,
     },
 }
 
@@ -1912,7 +2027,12 @@ pub enum WikipediaTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1943,7 +2063,12 @@ pub enum PubmedTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1966,7 +2091,12 @@ pub enum SemanticScholarTools {
         #[arg(long, short)]
         query: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 10)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1985,7 +2115,12 @@ pub enum SemanticScholarTools {
         #[arg(long, short)]
         id: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 50)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 50,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 
@@ -1996,7 +2131,12 @@ pub enum SemanticScholarTools {
         #[arg(long, short)]
         id: String,
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 50)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 50,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
     },
 }
@@ -2008,8 +2148,16 @@ pub enum SlackTools {
     #[command(name = "channels", alias = "list-channels")]
     Channels {
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 100)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 100,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
+        /// Pagination cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
 
     /// Get channel messages
@@ -2019,8 +2167,16 @@ pub enum SlackTools {
         #[arg(long, short)]
         channel: String,
         /// Maximum number of messages
-        #[arg(long, short, default_value_t = 50)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 50,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
+        /// Pagination cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
 
     /// Search messages
@@ -2029,17 +2185,39 @@ pub enum SlackTools {
         /// Search query
         #[arg(long, short)]
         query: String,
-        /// Maximum number of results
-        #[arg(long, short, default_value_t = 50)]
+        /// Results per page (1-100)
+        #[arg(
+            long,
+            short,
+            default_value_t = 50,
+            value_parser = clap::value_parser!(u32).range(1..=100)
+        )]
         limit: u32,
+        /// Page number (1+)
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+        page: u32,
+        /// Sort order: score or timestamp
+        #[arg(long, value_parser = ["score", "timestamp"])]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long, value_parser = ["asc", "desc"])]
+        sort_dir: Option<String>,
     },
 
     /// List users
     #[command(name = "users")]
     Users {
         /// Maximum number of results
-        #[arg(long, short, default_value_t = 100)]
+        #[arg(
+            long,
+            short,
+            default_value_t = 100,
+            value_parser = clap::value_parser!(u32).range(1..=5000)
+        )]
         limit: u32,
+        /// Pagination cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
 }
 

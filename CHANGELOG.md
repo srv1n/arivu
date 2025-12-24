@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- CLI: exposed pagination and cursor parameters for connectors that now paginate internally (e.g., Reddit `comment_limit`/`comment_sort`, Slack cursors, Google `page_token`/`limit`, Microsoft Graph `next_link`, IMAP pagination).
 
 ## [0.2.13] - 2025-12-24
 
