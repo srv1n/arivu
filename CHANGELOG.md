@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+
+## [0.2.14] - 2025-12-24
+
+### Changed
 - CLI: exposed pagination and cursor parameters for connectors that now paginate internally (e.g., Reddit `comment_limit`/`comment_sort`, Slack cursors, Google `page_token`/`limit`, Microsoft Graph `next_link`, IMAP pagination).
 
 ## [0.2.13] - 2025-12-24
@@ -146,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.13...HEAD
+[Unreleased]: https://github.com/srv1n/arivu/compare/v0.2.14...HEAD
+[0.2.14]: https://github.com/srv1n/arivu/releases/tag/v0.2.14
 [0.2.13]: https://github.com/srv1n/arivu/releases/tag/v0.2.13
 [0.2.12]: https://github.com/srv1n/arivu/releases/tag/v0.2.12
 [0.2.11]: https://github.com/srv1n/arivu/releases/tag/v0.2.11
