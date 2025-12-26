@@ -267,7 +267,7 @@ dependencies = [
  "mailparse",
  "meta_fetcher",
  "objc2 0.5.2",
- "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.2",
  "objc2-health-kit",
  "octocrab",
  "once_cell",
@@ -732,6 +732,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c132eebf10f5cad5289222520a4a058514204aed6d791f1cf4fe8088b82d15f"
 dependencies = [
  "objc2 0.5.2",
+]
+
+[[package]]
+name = "block2"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
+dependencies = [
+ "objc2 0.6.3",
 ]
 
 [[package]]
@@ -4263,6 +4272,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
  "bitflags 2.10.0",
+ "block2 0.6.2",
+ "libc",
  "objc2 0.6.3",
  "objc2-core-foundation",
 ]
