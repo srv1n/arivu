@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.16] - 2025-12-26
+
+### Fixed
+- CI: fix a `dead_code` build failure on newer Rust by marking unused Hacker News types as intentionally unused.
+
 ## [0.2.15] - 2025-12-26
 
 ### Changed

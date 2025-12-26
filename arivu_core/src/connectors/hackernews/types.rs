@@ -61,6 +61,7 @@ impl HackerNewsItem {}
 
 /// Represents a Hacker News user
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HackerNewsUser {
     /// The user's unique username. Case-sensitive.
     pub id: String,
@@ -78,6 +79,7 @@ pub struct HackerNewsUser {
 
 /// Represents updates to items and profiles
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HackerNewsUpdates {
     /// List of updated item IDs
     pub items: Vec<i64>,

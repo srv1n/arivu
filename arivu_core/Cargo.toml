@@ -1,6 +1,6 @@
 [package]
 name = "arivu_core"
-version = "0.2.15"
+version = "0.2.16"
 edition = "2021"
 description = "Core library for Arivu - unified data source connectors"
 license = "MIT OR Apache-2.0"
