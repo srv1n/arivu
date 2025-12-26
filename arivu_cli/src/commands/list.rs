@@ -29,7 +29,21 @@ pub async fn run(cli: &Cli) -> Result<()> {
     let providers = registry.list_providers();
 
     if providers.is_empty() {
-        println!("{}", "No connectors available".yellow());
+        println!("{}", "No connectors available in this build.".yellow());
+        println!();
+        println!(
+            "{} If you built from source, enable connector features (or use {}):",
+            "Tip:".green().bold(),
+            "--features full".cyan()
+        );
+        println!(
+            "  {}",
+            "cargo build --release -p arivu_cli --features default-connectors".cyan()
+        );
+        println!(
+            "  {}",
+            "cargo build --release -p arivu_cli --features full".cyan()
+        );
         return Ok(());
     }
 

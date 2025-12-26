@@ -1401,7 +1401,7 @@ mod tests {
         let mut comments_by_id: HashMap<String, CollectedComment> = HashMap::new();
         let mut more_queue: VecDeque<MorePlaceholder> = VecDeque::new();
         let mut seen: HashSet<String> = HashSet::new();
-        Self::collect_from_listing(
+        RedditConnector::collect_from_listing(
             &initial_children,
             link_fullname,
             &mut order,
@@ -1419,7 +1419,7 @@ mod tests {
             json!({ "kind": "t1", "data": { "id": "r1", "parent_id": "t1_c2", "author": "ar", "body": "br", "body_html": "hr", "score": 1, "created_utc": 4.0, "permalink": "/r/x/comments/post/_/r1", "is_submitter": false, "distinguished": "", "stickied": false } }),
         ];
 
-        Self::collect_from_things(
+        RedditConnector::collect_from_things(
             &more_things,
             link_fullname,
             &mut order,
@@ -1428,7 +1428,7 @@ mod tests {
             &mut seen,
         );
 
-        let tree = Self::build_comment_tree(&comments_by_id, link_fullname, 10);
+        let tree = RedditConnector::build_comment_tree(&comments_by_id, link_fullname, 10);
         assert_eq!(tree.len(), 3);
         assert_eq!(tree[0]["id"], "c1");
         assert_eq!(tree[1]["id"], "c2");

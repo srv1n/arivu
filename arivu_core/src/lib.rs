@@ -306,7 +306,7 @@ pub async fn build_registry_enabled_only() -> ProviderRegistry {
         }
     }
 
-    #[cfg(feature = "web")]
+    #[cfg(any(feature = "web", feature = "web-lite"))]
     {
         if let Ok(connector) = connectors::web::WebConnector::new(auth::AuthDetails::new()).await {
             registry.register_provider(Box::new(connector));

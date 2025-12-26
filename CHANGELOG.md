@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.15] - 2025-12-26
+
+### Changed
+- CLI: enable a default connector set for source builds so common connectors (PubMed/Wikipedia/etc.) work out of the box.
+- CLI: improve “connector not found” errors with actionable `--features ...` rebuild hints.
+- Core: allow the `web` connector to compile with `web-lite` (no browser cookie extraction), while preserving cookie extraction when enabled.
+
 ## [0.2.14] - 2025-12-24
 
 ### Changed

@@ -12,7 +12,6 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::collections::HashSet;
 use std::future::Future;
 use thiserror::Error;
-#[cfg(feature = "browser-cookies")]
 use url::Url;
 
 #[cfg(feature = "browser-cookies")]
@@ -112,10 +111,17 @@ pub async fn match_browser(browser: String) -> Result<Browser, ConnectorError> {
 }
 
 #[cfg(not(feature = "browser-cookies"))]
-pub async fn match_browser(_browser: String) -> Result<Browser, ConnectorError> {
-    Err(ConnectorError::Other(
-        "browser-cookies feature not enabled".to_string(),
-    ))
+pub async fn match_browser(browser: String) -> Result<Browser, ConnectorError> {
+    match browser.as_str() {
+        "firefox" => Ok(Browser::Firefox),
+        "chrome" => Ok(Browser::Chrome),
+        "safari" => Ok(Browser::Safari),
+        "brave" => Ok(Browser::Brave),
+        _ => Err(ConnectorError::Other(format!(
+            "Invalid browser: {}",
+            browser
+        ))),
+    }
 }
 
 #[cfg(feature = "browser-cookies")]
@@ -146,10 +152,21 @@ pub fn get_domain(url: &str) -> Result<String, ConnectorError> {
 }
 
 #[cfg(not(feature = "browser-cookies"))]
-pub fn get_domain(_url: &str) -> Result<String, ConnectorError> {
-    Err(ConnectorError::Other(
-        "browser-cookies feature not enabled".to_string(),
-    ))
+pub fn get_domain(url: &str) -> Result<String, ConnectorError> {
+    let url_with_scheme = if !url.starts_with("http://") && !url.starts_with("https://") {
+        format!("https://{}", url)
+    } else {
+        url.to_string()
+    };
+
+    let url = Url::parse(&url_with_scheme)
+        .map_err(|e| ConnectorError::Other(format!("Invalid URL: {}", e)))?;
+
+    let domain = url
+        .host_str()
+        .ok_or_else(|| ConnectorError::Other(format!("URL has no host: {}", url_with_scheme)))?;
+
+    Ok(domain.to_string())
 }
 
 #[cfg(feature = "browser-cookies")]

@@ -143,12 +143,9 @@ async fn execute_action(cli: &Cli, action: &ResolvedAction) -> Result<()> {
     let registry = crate::commands::list::create_registry().await?;
 
     // Check if connector exists
-    let provider = registry.get_provider(&action.connector).ok_or_else(|| {
-        CommandError::ConnectorNotFound(format!(
-            "Connector '{}' not available. You may need to enable the feature flag.",
-            action.connector
-        ))
-    })?;
+    let provider = registry
+        .get_provider(&action.connector)
+        .ok_or_else(|| CommandError::ConnectorNotFound(action.connector.clone()))?;
 
     let connector = provider.lock().await;
 

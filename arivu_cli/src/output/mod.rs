@@ -428,10 +428,24 @@ impl FormatError for CommandError {
     fn format_error(&self) -> String {
         match self {
             CommandError::ConnectorNotFound(name) => {
-                format!(
-                    "Connector '{}' not found. Use 'arivu list' to see available connectors.",
-                    name
-                )
+                if let Some(hint) = crate::feature_hints::hint_for_connector(name) {
+                    if hint.enabled {
+                        format!(
+                            "Connector '{}' not found (it appears enabled in this build). Use 'arivu list' to see available connectors.",
+                            hint.canonical
+                        )
+                    } else {
+                        format!(
+                            "Connector '{}' is not enabled in this build.\n\nRebuild/install with a connector feature, e.g.:\n  cargo build --release -p arivu_cli --features {}\n  # or: --features full\n\nThen re-run:\n  arivu list",
+                            hint.canonical, hint.cargo_feature
+                        )
+                    }
+                } else {
+                    format!(
+                        "Connector '{}' not found. Use 'arivu list' to see available connectors.",
+                        name
+                    )
+                }
             }
             CommandError::ToolNotFound(tool, connector) => {
                 format!("Tool '{}' not found for connector '{}'. Use 'arivu tools {}' to see available tools.", tool, connector, connector)

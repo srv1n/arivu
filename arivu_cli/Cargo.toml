@@ -1,6 +1,6 @@
 [package]
 name = "arivu_cli"
-version = "0.2.14"
+version = "0.2.15"
 edition = "2021"
 description = "CLI interface for Arivu - unified data access tool"
 license = "MIT OR Apache-2.0"
@@ -41,7 +41,24 @@ ratatui = { version = "0.24.0", optional = true }
 crossterm = { version = "0.29.0", optional = true }
 
 [features]
-default = []
+default = ["default-connectors"]
+
+# A practical default connector set for users building from source.
+# Keep this lightweight-ish (no enterprise auth/OAuth providers) while ensuring
+# common quick-start commands work.
+default-connectors = [
+    "arxiv",
+    "biorxiv",
+    "github",
+    "hackernews",
+    "pubmed",
+    "reddit",
+    "rss",
+    "semantic-scholar",
+    "web-lite",
+    "wikipedia",
+    "youtube",
+]
 full = ["all-connectors"]
 all-connectors = ["arivu_core/all-connectors"]
 
@@ -53,6 +70,7 @@ pubmed = ["arivu_core/pubmed"]
 semantic-scholar = ["arivu_core/semantic-scholar"]
 semantic_scholar = ["semantic-scholar"]
 web = ["arivu_core/web"]
+web-lite = ["arivu_core/web-lite"]
 x-twitter = ["arivu_core/x-twitter"]
 x = ["x-twitter"]
 youtube = ["arivu_core/youtube"]
@@ -80,6 +98,7 @@ firecrawl-search = ["arivu_core/firecrawl-search"]
 serper-search = ["arivu_core/serper-search"]
 tavily-search = ["arivu_core/tavily-search"]
 serpapi-search = ["arivu_core/serpapi-search"]
+parallel-search = ["arivu_core/parallel-search"]
 
 # Productivity & Cloud (pass-through)
 microsoft-graph = ["arivu_core/microsoft-graph"]

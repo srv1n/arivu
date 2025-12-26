@@ -10,6 +10,7 @@
 ## Build, Test, and Development Commands
 - `cargo build` / `cargo build --release -p arivu_cli` for debug/release builds.
 - Feature-scoped builds: `cargo build --release -p arivu_cli --features "youtube,hackernews"`.
+- Release builds: ALWAYS build with all features enabled: `cargo build --release -p arivu_cli --features full`.
 - Run CLI: `cargo run -p arivu_cli -- list`.
 - Run MCP server: `cargo run -p arivu_mcp`.
 - Lint and format: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`.

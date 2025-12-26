@@ -5,6 +5,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cli;
 mod commands;
+mod feature_hints;
 mod output;
 
 #[cfg(feature = "tui")]
@@ -13,6 +14,7 @@ mod tui;
 use arivu_core::UsageContext;
 use cli::{Cli, Commands};
 use commands::*;
+use output::FormatError;
 
 #[tokio::main]
 async fn main() {
@@ -224,7 +226,7 @@ async fn main() {
         .await;
 
     if let Err(e) = result {
-        eprintln!("{}: {}", "Error".red().bold(), e);
+        eprintln!("{}: {}", "Error".red().bold(), e.format_error());
         process::exit(1);
     }
 }

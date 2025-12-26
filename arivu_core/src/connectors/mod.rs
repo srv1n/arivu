@@ -41,7 +41,7 @@ pub mod scihub;
 pub mod semantic_scholar;
 #[cfg(feature = "slack")]
 pub mod slack;
-#[cfg(feature = "web")]
+#[cfg(any(feature = "web", feature = "web-lite"))]
 pub mod web;
 #[cfg(feature = "wikipedia")]
 pub mod wikipedia;

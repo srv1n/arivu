@@ -24,7 +24,10 @@ When testing connectors that access personal data:
 cargo build --release --package arivu_cli --features "exa-search,imap"
 
 # Build with all connectors
-cargo build --release --package arivu_cli --features "all-connectors"
+cargo build --release --package arivu_cli --features "full"
+
+# Release builds: ALWAYS ship with all features enabled.
+# (Connectors are compile-time feature-gated; releases built without `full` will appear "missing".)
 
 # Build with Apple ecosystem (macOS only)
 cargo build --release --package arivu_cli --features "apple-ecosystem"
